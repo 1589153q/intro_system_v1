@@ -96,11 +96,11 @@
       <div>対象シート: 
         <select id="f-sheet">
           <option value="ALL">すべてのシート</option>
-          <option value="ホロオリ曲">ホロオリ曲</option>
-          <option value="ホロ歌ってみた">ホロ歌ってみた</option>
-          <option value="ボカロ人気曲">ボカロ人気曲</option>
-          <option value="他VTuberオリ曲">他VTuberオリ曲</option>
-          <option value="汎用・その他">汎用・その他</option>
+          <option value="hololive_original_song">ホロオリ曲</option>
+          <option value="hololive_cover_song">ホロカバー曲</option>
+          <option value="LocalVoid_weekly_best10">LocalVoid Best10</option>
+          <option value="VTuber_original_song">他VTuberオリ曲</option>
+          <option value="General">汎用・その他</option>
         </select>
       </div>
       <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
@@ -175,7 +175,7 @@
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
   const GAS_URL = "https://script.google.com/macros/s/AKfycby-lYg8SxOmSTuRNi86ofT5YzoCiAi2OIHkoYqT_hlX4cVeNe5FqO9wNGRpzQJkC0k/exec"; 
-  const COMMENT_PASSWORD = "1234";           
+  const COMMENT_PASSWORD = "1234";            
 
   let rawQuizData = [];
   let quizData = [];
@@ -533,7 +533,7 @@
     statusEl.innerText = "既存DBと照合して保存中...";
     fetch(GAS_URL, {
       method: "POST",
-      body: JSON.stringify({ action: "importPlaylist", playlistId: playlistId, targetSheet: "汎用・その他" })
+      body: JSON.stringify({ action: "importPlaylist", playlistId: playlistId, targetSheet: "General" })
     })
     .then(res => res.json())
     .then(data => {
