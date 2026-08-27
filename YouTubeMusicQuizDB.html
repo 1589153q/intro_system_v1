@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>イントロクイズ システム</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
+    .card { background: white; padding: 25px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 750px; width: 100%; box-sizing: border-box; }
+    .status { font-weight: bold; margin-bottom: 15px; }
+    .filter-box, .mode-box, .playlist-box { display: none; background: #f0f4f8; padding: 12px; border-radius: 8px; margin: 12px 0; text-align: left; font-size: 13px; }
+    .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; }
+    .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
+    button { font-size: 14px; padding: 8px 14px; margin: 3px; cursor: pointer; border: none; border-radius: 6px; background: #007bff; color: white; transition: 0.2s; }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    button.btn-toggle { background: #28a745; font-weight: bold; min-width: 140px; }
+    button.btn-toggle.playing { background: #dc3545; }
+    .switch-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; font-size: 14px; font-weight: bold; }
+    .switch { position: relative; display: inline-block; width: 46px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .3s; border-radius: 24px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+    input:checked + .slider { background-color: #28a745; }
+    input:checked + .slider:before { transform: translateX(22px); }
+    #player-container { margin: 10px 0; }
+    #player-wrapper { display: inline-block; }
+    .hide-player { display: none !important; }
+    .seekbar-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px auto; max-width: 500px; font-size: 13px; font-family: monospace; }
+    .seekbar-container input[type="range"] { flex: 1; cursor: pointer; }
+    #answer-card { display: none; margin-top: 15px; padding: 15px; border-radius: 8px; background: #fff3cd; border: 1px solid #ffeeba; text-align: left; }
+    #answer-card h3 { margin: 0 0 10px 0; font-size: 18px; color: #d9534f; }
+    .snippet-box { font-size: 12px; max-height: 120px; overflow-y: auto; background: #fff; padding: 8px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; margin: 5px 0 10px 0; }
+    .input-row { margin-top: 4px; display: flex; gap: 5px; align-items: center; }
+    .input-row input, .input-row textarea { flex: 1; font-size: 13px; padding: 4px; }
+    #song-list-container { display: none; margin-top: 15px; text-align: left; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fafafa; }
+    #song-list-container ol { padding-left: 20px; margin: 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>イントロクイズ</h2>
+  <div id="status" class="status">データを読み込み中...</div>
+
+  <div class="switch-container">
+    <span>動画を表示する</span>
+    <label class="switch">
+      <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div id="player-container">
+    <div id="player-wrapper" class="hide-player">
+      <div id="player"></div>
+    </div>
+  </div>
+
+  <div class="seekbar-container">
+    <span id="time-current">0:00</span>
+    <input type="range" id="seek-bar" value="0" min="0" max="100" step="1" oninput="onSeekInput()" onchange="onSeekChange()" disabled>
+    <span id="time-duration">0:00</span>
+  </div>
+
+  <div>
+    <button id="btn-prev" onclick="prevQuestion()" disabled>◀ 前へ</button>
+    <button id="btn-load" onclick="nextQuestion()" disabled>次へ ▶</button><br>
+    <button id="btn-toggle" class="btn-toggle" onclick="togglePlay()" disabled>▶ 再生</button>
+    <button id="btn-ans" onclick="showAnswer()" disabled>正解を表示</button>
+  </div>
+
+  <div style="margin-top: 12px;">
+    <button onclick="shuffleQuestions()">🎲 シャッフル</button>
+    <button onclick="toggleFilterBox()">🔍 条件・シート絞り込み</button>
+    <button onclick="togglePlaylistBox()">▶ YT再生リスト読込</button>
+    <button onclick="toggleModeBox()">⚙️ 再生モード</button>
+    <button onclick="toggleSongList()">📋 出題リスト</button>
+  </div>
+
+  <!-- YT再生リスト連携ボックス -->
+  <div id="playlist-box" class="playlist-box">
+    <strong>▶ YouTube再生リストから出題・DB追加</strong>
+    <div style="margin-top:5px;">
+      再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
+      <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
+      <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+    </div>
+    <span id="playlist-status" style="font-size:12px; color:blue;"></span>
+  </div>
+
+  <!-- フィルタリングボックス -->
+  <div id="filter-box" class="filter-box">
+    <strong>🔍 リスト条件・シートフィルタリング</strong>
+    <div class="filter-grid">
+      <div>対象シート: 
+        <select id="f-sheet">
+          <option value="ALL">すべてのシート</option>
+          <option value="ホロオリ曲">ホロオリ曲</option>
+          <option value="ホロ歌ってみた">ホロ歌ってみた</option>
+          <option value="ボカロ人気曲">ボカロ人気曲</option>
+          <option value="他VTuberオリ曲">他VTuberオリ曲</option>
+          <option value="汎用・その他">汎用・その他</option>
+        </select>
+      </div>
+      <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
+      <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
+      <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
+    </div>
+    <div style="margin-top: 8px; text-align: right;">
+      <button onclick="applyFilters()" style="font-size: 12px;">フィルター適用</button>
+      <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
+    </div>
+  </div>
+
+  <!-- 再生モードボックス -->
+  <div id="mode-box" class="mode-box">
+    <strong>🎵 再生モード設定</strong><br>
+    <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
+    <label><input type="radio" name="playMode" value="fullRandom" onchange="updateModeUI()"> 完全ラントロ（ランダム秒数〜）</label>
+    <span id="full-random-settings" style="display:none; margin-left: 10px; font-size: 12px;">
+      除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
+    </span><br>
+    <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
+  </div>
+
+  <div id="song-list-container">
+    <strong>【出題リスト】</strong>
+    <ol id="song-list"></ol>
+  </div>
+
+  <!-- 正解カード -->
+  <div id="answer-card">
+    <h3>【正解】</h3>
+    <p><strong>動画タイトル：</strong> <span id="ans-title"></span></p>
+    <p><strong>歌唱者：</strong> <span id="ans-artist"></span></p>
+    <p><strong>チャンネル名：</strong> <span id="ans-channel"></span></p>
+    <p><strong>投稿日：</strong> <span id="ans-date"></span></p>
+    <p><strong>再生数：</strong> <span id="ans-views"></span> 回 / <strong>いいね数：</strong> <span id="ans-likes"></span></p>
+    
+    <strong>説明欄：</strong>
+    <div id="ans-snippet" class="snippet-box"></div>
+
+    <hr style="border:0; border-top:1px dashed #ccc; margin: 12px 0;">
+
+    <div>
+      <strong>代表ID:</strong>
+      <div class="input-row">
+        <select id="video-id-select" style="flex:1; font-size:13px; padding:4px;"></select>
+        <button onclick="applyVideoIdChange()" style="font-size: 12px;">書き換え保存</button>
+      </div>
+      <span id="video-save-status" style="font-size: 12px; color: green;"></span>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <strong>指定ラントロ秒数:</strong>
+      <div class="input-row">
+        <input type="number" id="custom-sec-input" placeholder="例: 45 (秒)">
+        <button onclick="saveCustomStartSec()" style="font-size: 12px;">秒数を保存</button>
+      </div>
+      <span id="sec-save-status" style="font-size: 12px; color: green;"></span>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <strong>メモ・コメント:</strong>
+      <div class="input-row">
+        <textarea id="comment-input" placeholder="コメントを入力..."></textarea>
+        <button onclick="saveCommentWithAuth()" style="font-size: 12px;">コメントを保存</button>
+      </div>
+      <span id="comment-save-status" style="font-size: 12px; color: green;"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+  const GAS_URL = "YOUR_GAS_DEPLOY_URL_HERE"; 
+  const COMMENT_PASSWORD = "1234";           
+
+  let rawQuizData = [];
+  let quizData = [];
+  let currentIndex = -1;
+  let player;
+  let isPlaying = false;
+  let actualStartSec = 0;
+  let seekTimer = null;
+  let isUserSeeking = false;
+
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+      height: '360',
+      width: '640',
+      host: 'https://www.youtube.com',
+      playerVars: { 'playsinline': 1, 'controls': 0, 'origin': window.location.origin },
+      events: { 'onStateChange': onPlayerStateChange }
+    });
+    fetchQuizData();
+  }
+
+  function toggleVideoVisibility() {
+    const isChecked = document.getElementById('video-toggle').checked;
+    const wrapper = document.getElementById('player-wrapper');
+    if (isChecked) wrapper.classList.remove('hide-player');
+    else wrapper.classList.add('hide-player');
+  }
+
+  function toggleFilterBox() {
+    const el = document.getElementById('filter-box');
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+  }
+
+  function togglePlaylistBox() {
+    const el = document.getElementById('playlist-box');
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+  }
+
+  function toggleModeBox() {
+    const el = document.getElementById('mode-box');
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+  }
+
+  function updateModeUI() {
+    const mode = document.querySelector('input[name="playMode"]:checked').value;
+    document.getElementById('full-random-settings').style.display = (mode === 'fullRandom') ? 'inline' : 'none';
+  }
+
+  function onPlayerStateChange(event) {
+    const btn = document.getElementById('btn-toggle');
+    if (event.data === YT.PlayerState.PLAYING) {
+      isPlaying = true;
+      btn.innerText = "■ 停止 (一時停止)";
+      btn.classList.add('playing');
+      startSeekBarTimer();
+    } else {
+      isPlaying = false;
+      btn.innerText = "▶ 再生";
+      btn.classList.remove('playing');
+      stopSeekBarTimer();
+    }
+  }
+
+  function formatTime(seconds) {
+    const sec = Math.floor(seconds || 0);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function startSeekBarTimer() {
+    stopSeekBarTimer();
+    seekTimer = setInterval(updateSeekBarUI, 250);
+  }
+
+  function stopSeekBarTimer() {
+    if (seekTimer) clearInterval(seekTimer);
+  }
+
+  function updateSeekBarUI() {
+    if (!player || isUserSeeking) return;
+    const current = player.getCurrentTime() || 0;
+    const duration = player.getDuration() || 0;
+    
+    const seekBar = document.getElementById('seek-bar');
+    seekBar.max = duration;
+    seekBar.value = current;
+
+    document.getElementById('time-current').innerText = formatTime(current);
+    document.getElementById('time-duration').innerText = formatTime(duration);
+  }
+
+  function onSeekInput() {
+    isUserSeeking = true;
+    const seekBar = document.getElementById('seek-bar');
+    document.getElementById('time-current').innerText = formatTime(seekBar.value);
+  }
+
+  function onSeekChange() {
+    if (!player) return;
+    const seekBar = document.getElementById('seek-bar');
+    player.seekTo(seekBar.value, true);
+    isUserSeeking = false;
+  }
+
+  function fetchQuizData() {
+    fetch(GAS_URL)
+      .then(res => res.json())
+      .then(data => {
+        rawQuizData = data;
+        applyFilters();
+      })
+      .catch(err => {
+        document.getElementById('status').innerText = "データの取得に失敗しました。";
+      });
+  }
+
+  function applyFilters() {
+    const selectedSheet = document.getElementById('f-sheet').value;
+    const tagKeyword = document.getElementById('f-tag').value.trim();
+    const vMin = Number(document.getElementById('f-views-min').value) || 0;
+    const vMax = Number(document.getElementById('f-views-max').value) || Infinity;
+    const dMin = document.getElementById('f-date-min').value;
+    const dMax = document.getElementById('f-date-max').value;
+
+    quizData = rawQuizData.filter(item => {
+      if (selectedSheet !== "ALL" && item.sheetName !== selectedSheet) return false;
+      if (tagKeyword && (!item.tags || !item.tags.some(t => t.includes(tagKeyword)))) return false;
+      if (item.views < vMin || item.views > vMax) return false;
+      if (dMin && item.postDate < dMin) return false;
+      if (dMax && item.postDate > dMax) return false;
+      return true;
+    });
+
+    currentIndex = -1;
+    document.getElementById('status').innerText = `該当 ${quizData.length} / 全 ${rawQuizData.length} 問`;
+    updateNavigationButtons();
+    renderSongList();
+  }
+
+  function resetFilters() {
+    document.getElementById('f-sheet').value = "ALL";
+    document.getElementById('f-tag').value = "";
+    document.getElementById('f-views-min').value = "";
+    document.getElementById('f-views-max').value = "";
+    document.getElementById('f-date-min').value = "";
+    document.getElementById('f-date-max').value = "";
+    applyFilters();
+  }
+
+  function shuffleQuestions() {
+    for (let i = quizData.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [quizData[i], quizData[j]] = [quizData[j], quizData[i]];
+    }
+    currentIndex = -1;
+    alert("出題順をランダムにシャッフルしました！");
+    updateNavigationButtons();
+    renderSongList();
+  }
+
+  function renderSongList() {
+    const listEl = document.getElementById('song-list');
+    listEl.innerHTML = quizData.map(item => `<li>${item.videoTitle} (${item.artist})</li>`).join('');
+  }
+
+  function toggleSongList() {
+    const el = document.getElementById('song-list-container');
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+  }
+
+  function nextQuestion() {
+    if (currentIndex < quizData.length - 1) { currentIndex++; loadCurrentQuestion(); }
+  }
+
+  function prevQuestion() {
+    if (currentIndex > 0) { currentIndex--; loadCurrentQuestion(); }
+  }
+
+  function updateNavigationButtons() {
+    document.getElementById('btn-prev').disabled = (currentIndex <= 0);
+    document.getElementById('btn-load').disabled = (currentIndex >= quizData.length - 1);
+  }
+
+  function loadCurrentQuestion() {
+    updateNavigationButtons();
+    document.getElementById('answer-card').style.display = 'none';
+    document.getElementById('btn-ans').disabled = true;
+    document.getElementById('btn-toggle').disabled = true;
+    document.getElementById('seek-bar').disabled = true;
+    document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備中...`;
+    
+    const current = quizData[currentIndex];
+    const mode = document.querySelector('input[name="playMode"]:checked').value;
+
+    player.mute();
+    player.loadVideoById({ videoId: current.youtubeId });
+
+    setTimeout(() => {
+      const duration = player.getDuration() || 180;
+      actualStartSec = 0;
+
+      if (mode === 'customSec') {
+        actualStartSec = current.customStartSec !== null ? current.customStartSec : 0;
+      } else if (mode === 'fullRandom') {
+        const cutStartPercent = Number(document.getElementById('cut-start').value) || 0;
+        const cutEndPercent = Number(document.getElementById('cut-end').value) || 0;
+        
+        const startBoundary = duration * (cutStartPercent / 100);
+        const endBoundary = duration * (1 - (cutEndPercent / 100));
+        
+        if (endBoundary > startBoundary) {
+          actualStartSec = Math.floor(startBoundary + Math.random() * (endBoundary - startBoundary));
+        } else {
+          actualStartSec = 0;
+        }
+      }
+
+      player.seekTo(actualStartSec, true);
+      
+      setTimeout(() => {
+        player.pauseVideo();
+        player.seekTo(actualStartSec, true);
+        document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+        document.getElementById('btn-toggle').disabled = false;
+        document.getElementById('btn-ans').disabled = false;
+        document.getElementById('seek-bar').disabled = false;
+        updateSeekBarUI();
+      }, 500);
+
+    }, 1000);
+  }
+
+  function togglePlay() {
+    if (!player) return;
+    if (isPlaying) {
+      player.pauseVideo();
+    } else {
+      player.unMute();
+      player.playVideo();
+    }
+  }
+
+  function showAnswer() {
+    if (currentIndex < 0 || currentIndex >= quizData.length) return;
+    const current = quizData[currentIndex];
+    
+    document.getElementById('ans-title').innerText = current.videoTitle;
+    document.getElementById('ans-artist').innerText = current.artist;
+    document.getElementById('ans-channel').innerText = current.channelName;
+    document.getElementById('ans-date').innerText = current.postDate;
+    document.getElementById('ans-views').innerText = current.views.toLocaleString();
+    document.getElementById('ans-likes').innerText = current.likes.toLocaleString();
+    document.getElementById('ans-snippet').innerText = current.description;
+    
+    const selectEl = document.getElementById('video-id-select');
+    selectEl.innerHTML = "";
+    (current.videoIdList || [current.youtubeId]).forEach(vid => {
+      const opt = document.createElement('option');
+      opt.value = vid;
+      opt.innerText = vid + (vid === current.youtubeId ? " (現在の代表)" : "");
+      if (vid === current.youtubeId) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+
+    document.getElementById('custom-sec-input').value = current.customStartSec !== null ? current.customStartSec : "";
+    document.getElementById('comment-input').value = current.comment || "";
+    
+    document.getElementById('video-save-status').innerText = "";
+    document.getElementById('sec-save-status').innerText = "";
+    document.getElementById('comment-save-status').innerText = "";
+    
+    document.getElementById('answer-card').style.display = 'block';
+  }
+
+  // 書き換え保存（sheetNameとrowIndexを渡すように対応）
+  function applyVideoIdChange() {
+    const current = quizData[currentIndex];
+    const newYoutubeId = document.getElementById('video-id-select').value;
+    const statusEl = document.getElementById('video-save-status');
+    
+    if (!newYoutubeId || !current.sheetName) return;
+    statusEl.innerText = "書き換え保存中...";
+
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ sheetName: current.sheetName, rowIndex: current.rowIndex, youtubeId: newYoutubeId })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(data.status === "success") {
+        current.youtubeId = newYoutubeId;
+        statusEl.innerText = "代表IDを書き換えました！";
+      } else { statusEl.innerText = "保存失敗"; }
+    });
+  }
+
+  function saveCustomStartSec() {
+    const current = quizData[currentIndex];
+    const val = document.getElementById('custom-sec-input').value;
+    const newSec = val !== "" ? Number(val) : null;
+    const statusEl = document.getElementById('sec-save-status');
+    
+    if(!current.sheetName) return;
+    statusEl.innerText = "保存中...";
+
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ sheetName: current.sheetName, rowIndex: current.rowIndex, customStartSec: newSec })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(data.status === "success") {
+        current.customStartSec = newSec;
+        statusEl.innerText = "保存しました！";
+      } else { statusEl.innerText = "保存失敗"; }
+    });
+  }
+
+  function saveCommentWithAuth() {
+    const inputPass = prompt("コメントを保存するにはパスワードを入力してください:");
+    if (inputPass === null) return;
+
+    if (inputPass !== COMMENT_PASSWORD) {
+      alert("パスワードが違います。保存をキャンセルしました。");
+      return;
+    }
+
+    const current = quizData[currentIndex];
+    const newComment = document.getElementById('comment-input').value;
+    const statusEl = document.getElementById('comment-save-status');
+    
+    if(!current.sheetName) return;
+    statusEl.innerText = "保存中...";
+
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ sheetName: current.sheetName, rowIndex: current.rowIndex, comment: newComment })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(data.status === "success") {
+        current.comment = newComment;
+        statusEl.innerText = "保存しました！";
+      } else { statusEl.innerText = "保存失敗"; }
+    });
+  }
+
+  // YouTube再生リストの未登録動画をDBへ書き込み保存
+  function savePlaylistToDB() {
+    const playlistId = document.getElementById('playlist-id-input').value.trim();
+    const statusEl = document.getElementById('playlist-status');
+    if (!playlistId) { alert("再生リストIDを入力してください。"); return; }
+
+    statusEl.innerText = "既存DBと照合して保存中...";
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "importPlaylist", playlistId: playlistId, targetSheet: "汎用・その他" })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "success") {
+        const res = data.result;
+        statusEl.innerText = `完了！ 新規追加: ${res.addedCount}件 / スキップ(重複): ${res.skippedCount}件`;
+        fetchQuizData(); // 最新データを再取得
+      } else { statusEl.innerText = "保存失敗"; }
+    });
+  }
+</script>
+
+</body>
+</html>
