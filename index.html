@@ -94,13 +94,8 @@
     <strong>🔍 リスト条件・シートフィルタリング</strong>
     <div class="filter-grid">
       <div>対象シート: 
-        <select id="f-sheet">
+        <select id="f-sheet" onchange="applyFilters()">
           <option value="ALL">すべてのシート</option>
-          <option value="hololive_original_song">ホロオリ曲</option>
-          <option value="hololive_cover_song">ホロカバー曲</option>
-          <option value="LocalVoid_weekly_best10">LocalVoid Best10</option>
-          <option value="VTuber_original_song">他VTuberオリ曲</option>
-          <option value="General">汎用・その他</option>
         </select>
       </div>
       <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
@@ -282,16 +277,44 @@
   }
 
   function fetchQuizData() {
-    fetch(GAS_URL)
-      .then(res => res.json())
-      .then(data => {
-        rawQuizData = data;
-        applyFilters();
-      })
-      .catch(err => {
-        document.getElementById('status').innerText = "データの取得に失敗しました。";
-      });
-  }
+  fetch(GAS_URL)
+    .then(res => res.json())
+    .then(resData => {
+      // GASからのレスポンス形式に合わせてデータとシート一覧を取得
+      // （※もしレスポンスが { sheetNames: [...], data: [...] } の構造の場合）
+      if (resData.sheetNames && resData.data) {
+        rawQuizData = resData.data;
+        updateSheetSelectOptions(resData.sheetNames);
+      } else {
+        // 従来の配列直受けの場合のフォールバック
+        rawQuizData = resData;
+        // 取得データ内から一意なsheetNameを抽出して動的生成することも可能
+        const uniqueSheets = [...new Set(rawQuizData.map(item => item.sheetName).filter(Boolean))];
+        updateSheetSelectOptions(uniqueSheets);
+      }
+      
+      applyFilters();
+    })
+    .catch(err => {
+      document.getElementById('status').innerText = "データの取得に失敗しました。";
+      console.error(err);
+    });
+}
+
+// シート名の選択肢を動的に生成する関数
+function updateSheetSelectOptions(sheetNames) {
+  const selectEl = document.getElementById('f-sheet');
+  
+  // 「すべてのシート(ALL)」以外の既存オプションをクリア
+  selectEl.innerHTML = '<option value="ALL">すべてのシート</option>';
+  
+  sheetNames.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.innerText = name; // スプレッドシートのシート名がそのまま表示されます
+    selectEl.appendChild(opt);
+  });
+}
 
   function applyFilters() {
     const selectedSheet = document.getElementById('f-sheet').value;
