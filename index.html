@@ -117,6 +117,7 @@
       <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
       <span class="slider"></span>
     </label>
+    <button onclick="openPopoutWindow()" style="font-size: 12px; margin-left: 15px; background: #6f42c1;">🪟 画面をポップアウト</button>
   </div>
 
   <div id="player-container">
@@ -149,7 +150,7 @@
     <div class="tab-header">
       <button class="tab-btn active" onclick="switchTab('filter-panel', this)">🔍 条件・シート</button>
       <button class="tab-btn" onclick="switchTab('playlist-panel', this)">▶ YouTube再生リスト</button>
-      <button class="tab-btn" onclick="switchTab('mode-panel', this)">🎵 再生モード</button>
+      <button class="tab-btn" onclick="switchTab('mode-panel', this)">🎵 再生モード・音量</button>
     </div>
 
     <!-- 1. フィルタリングパネル -->
@@ -193,9 +194,7 @@
         <div>
           ジャンルタグ: 
           <input type="text" id="playlist-tag-input" list="tag-suggestions" placeholder="例: アニソン, J-POP (選択または直接入力)" style="width: 280px;">
-          <datalist id="tag-suggestions">
-            <!-- 既存のタグ候補が動的に挿入されます -->
-          </datalist>
+          <datalist id="tag-suggestions"></datalist>
         </div>
         <div>
           <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
@@ -207,7 +206,7 @@
       </div>
     </div>
 
-    <!-- 3. 再生モードパネル -->
+    <!-- 3. 再生モード・音量パネル -->
     <div id="mode-panel" class="tab-panel">
       <strong>🎵 再生モード設定</strong><br><br>
       <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
@@ -216,6 +215,20 @@
         除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
       </span><br>
       <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
+
+      <hr style="margin: 12px 0; border: 0; border-top: 1px solid #ccc;">
+
+      <strong>🔊 音量・ミュート設定</strong>
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 15px;">
+        <label>
+          音量: 
+          <input type="range" id="volume-slider" min="0" max="100" value="100" oninput="changeVolume(this.value)" style="vertical-align: middle;">
+          <span id="volume-text">100%</span>
+        </label>
+        <label style="cursor: pointer; font-weight: bold;">
+          <input type="checkbox" id="mute-checkbox" onchange="toggleMute(this.checked)"> 🔇 ミュート
+        </label>
+      </div>
     </div>
   </div>
 
@@ -280,15 +293,19 @@
 
   const dataCache = {};
   let availableSheetNames = [];
-  let existingTags = new Set(); // 既存のタグ保持用
+  let existingTags = new Set();
   let quizData = [];
   let currentIndex = -1;
   let player;
+  let popoutWindow = null;
+  let popoutPlayer = null;
   let isPlaying = false;
   let actualStartSec = 0;
   let seekTimer = null;
   let isUserSeeking = false;
   let autoSkipTimeout = null;
+  let currentVolume = 100;
+  let isMuted = false;
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -304,6 +321,91 @@
     fetchSheetMetadata();
   }
 
+  // ポップアウト（子画面）ウィンドウの開設関数
+  function openPopoutWindow() {
+    if (popoutWindow && !popoutWindow.closed) {
+      popoutWindow.focus();
+      return;
+    }
+
+    popoutWindow = window.open("", "IntroQuizPopout", "width=700,height=550");
+    const doc = popoutWindow.document;
+
+    doc.write(`
+      <!DOCTYPE html>
+      <html lang="ja">
+      <head>
+        <meta charset="UTF-8">
+        <title>出題・解答スクリーン</title>
+        <style>
+          body { font-family: sans-serif; background: #222; color: #fff; text-align: center; padding: 15px; margin: 0; }
+          #popout-player-wrapper { display: inline-block; margin-bottom: 15px; }
+          .hide-player { display: none !important; }
+          .info-card { background: #333; border-radius: 8px; padding: 15px; margin-top: 10px; display: none; text-align: left; }
+          .info-card h2 { margin: 0 0 10px 0; color: #ffca28; font-size: 20px; }
+          .info-card p { margin: 5px 0; font-size: 16px; }
+        </style>
+      </head>
+      <body>
+        <div id="popout-player-wrapper" class="hide-player">
+          <div id="popout-player"></div>
+        </div>
+
+        <div id="popout-info" class="info-card">
+          <h2>【正解】</h2>
+          <p><strong>タイトル：</strong> <span id="popout-title">-</span></p>
+          <p><strong>投稿者 / アーティスト：</strong> <span id="popout-artist">-</span></p>
+        </div>
+      </body>
+      </html>
+    `);
+
+    // 子画面側に YouTube Iframe API スクリプトを注入
+    const script = doc.createElement('script');
+    script.src = "https://www.youtube.com/iframe_api";
+    doc.head.appendChild(script);
+
+    popoutWindow.onYouTubeIframeAPIReady = function() {
+      popoutPlayer = new popoutWindow.YT.Player('popout-player', {
+        height: '360',
+        width: '640',
+        host: 'https://www.youtube.com',
+        playerVars: { 'playsinline': 1, 'controls': 0 },
+        events: {
+          'onStateChange': (e) => onPlayerStateChange(e),
+          'onError': (e) => onPlayerError(e)
+        }
+      });
+    };
+
+    // 初期表示トグルの状態を同期
+    setTimeout(() => {
+      syncVideoVisibility();
+    }, 500);
+  }
+
+  // 音量スライダーの変更処理
+  function changeVolume(val) {
+    currentVolume = Number(val);
+    document.getElementById('volume-text').innerText = `${currentVolume}%`;
+    
+    if (player && player.setVolume) player.setVolume(currentVolume);
+    if (popoutPlayer && popoutPlayer.setVolume) popoutPlayer.setVolume(currentVolume);
+  }
+
+  // ミュートの切り替え処理
+  function toggleMute(muted) {
+    isMuted = muted;
+    if (player) {
+      if (isMuted) player.mute();
+      else player.unMute();
+    }
+    if (popoutPlayer) {
+      if (isMuted) popoutPlayer.mute();
+      else popoutPlayer.unMute();
+    }
+  }
+
   function onPlayerError(event) {
     console.warn("YouTube Player Error Code:", event.data);
     document.getElementById('status').innerText = `⚠️ 動画の再生エラー (Error: ${event.data})。自動で次の曲へスキップします...`;
@@ -315,10 +417,23 @@
   }
 
   function toggleVideoVisibility() {
+    syncVideoVisibility();
+  }
+
+  function syncVideoVisibility() {
     const isChecked = document.getElementById('video-toggle').checked;
     const wrapper = document.getElementById('player-wrapper');
     if (isChecked) wrapper.classList.remove('hide-player');
     else wrapper.classList.add('hide-player');
+
+    // 子画面（ポップアウト）側への同期
+    if (popoutWindow && !popoutWindow.closed) {
+      const popoutWrapper = popoutWindow.document.getElementById('popout-player-wrapper');
+      if (popoutWrapper) {
+        if (isChecked) popoutWrapper.classList.remove('hide-player');
+        else popoutWrapper.classList.add('hide-player');
+      }
+    }
   }
 
   function toggleSettingsBox() {
@@ -374,9 +489,11 @@
   }
 
   function updateSeekBarUI() {
-    if (!player || isUserSeeking) return;
-    const current = player.getCurrentTime() || 0;
-    const duration = player.getDuration() || 0;
+    const activePlayer = (popoutPlayer && popoutWindow && !popoutWindow.closed) ? popoutPlayer : player;
+    if (!activePlayer || isUserSeeking || !activePlayer.getCurrentTime) return;
+    
+    const current = activePlayer.getCurrentTime() || 0;
+    const duration = activePlayer.getDuration() || 0;
     
     const seekBar = document.getElementById('seek-bar');
     seekBar.max = duration;
@@ -393,9 +510,11 @@
   }
 
   function onSeekChange() {
-    if (!player) return;
     const seekBar = document.getElementById('seek-bar');
-    player.seekTo(seekBar.value, true);
+    if (player && player.seekTo) player.seekTo(seekBar.value, true);
+    if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.seekTo) {
+      popoutPlayer.seekTo(seekBar.value, true);
+    }
     isUserSeeking = false;
   }
 
@@ -477,7 +596,6 @@
     }
   }
 
-  // 既存タグ一覧を datalist へ登録する関数
   function updateTagSuggestions() {
     const datalist = document.getElementById('tag-suggestions');
     if (!datalist) return;
@@ -520,7 +638,6 @@
             if (dataCache[item.sheetName]) {
               dataCache[item.sheetName].push(item);
             }
-            // タグを収集して一意リスト化
             if (Array.isArray(item.tags)) {
               item.tags.forEach(t => existingTags.add(t));
             } else if (item.tags) {
@@ -528,7 +645,7 @@
             }
           });
         }
-        updateTagSuggestions(); // datalist の候補を更新
+        updateTagSuggestions();
       } catch (err) {
         document.getElementById('status').innerText = "データの取得に失敗しました。";
         console.error(err);
@@ -632,6 +749,12 @@
     document.getElementById('answer-card').style.display = 'none';
     document.getElementById('btn-ans').innerText = "正解を表示";
 
+    // 子画面の情報カードも非表示へ
+    if (popoutWindow && !popoutWindow.closed) {
+      const pInfo = popoutWindow.document.getElementById('popout-info');
+      if (pInfo) pInfo.style.display = 'none';
+    }
+
     document.getElementById('btn-ans').disabled = true;
     document.getElementById('btn-toggle').disabled = true;
     document.getElementById('seek-bar').disabled = true;
@@ -640,8 +763,15 @@
     const current = quizData[currentIndex];
     const mode = document.querySelector('input[name="playMode"]:checked').value;
 
+    // 親画面プレイヤーのロード
     player.mute();
     player.loadVideoById({ videoId: current.youtubeId });
+
+    // 子画面（ポップアウト）プレイヤーのロード
+    if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
+      popoutPlayer.mute();
+      popoutPlayer.loadVideoById({ videoId: current.youtubeId });
+    }
 
     setTimeout(() => {
       const duration = player.getDuration() || 180;
@@ -664,10 +794,19 @@
       }
 
       player.seekTo(actualStartSec, true);
+      if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
+        popoutPlayer.seekTo(actualStartSec, true);
+      }
       
       setTimeout(() => {
         player.pauseVideo();
         player.seekTo(actualStartSec, true);
+
+        if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
+          popoutPlayer.pauseVideo();
+          popoutPlayer.seekTo(actualStartSec, true);
+        }
+
         document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
         document.getElementById('btn-toggle').disabled = false;
         document.getElementById('btn-ans').disabled = false;
@@ -679,12 +818,22 @@
   }
 
   function togglePlay() {
-    if (!player) return;
     if (isPlaying) {
-      player.pauseVideo();
+      if (player && player.pauseVideo) player.pauseVideo();
+      if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.pauseVideo) {
+        popoutPlayer.pauseVideo();
+      }
     } else {
-      player.unMute();
-      player.playVideo();
+      if (player && player.playVideo) {
+        if (!isMuted) player.unMute();
+        player.setVolume(currentVolume);
+        player.playVideo();
+      }
+      if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.playVideo) {
+        if (!isMuted) popoutPlayer.unMute();
+        popoutPlayer.setVolume(currentVolume);
+        popoutPlayer.playVideo();
+      }
     }
   }
 
@@ -693,15 +842,21 @@
 
     const answerCard = document.getElementById('answer-card');
     const btnAns = document.getElementById('btn-ans');
+    const current = quizData[currentIndex];
 
+    // 非表示（隠す）処理
     if (answerCard.style.display === 'block') {
       answerCard.style.display = 'none';
       btnAns.innerText = "正解を表示";
+
+      if (popoutWindow && !popoutWindow.closed) {
+        const pInfo = popoutWindow.document.getElementById('popout-info');
+        if (pInfo) pInfo.style.display = 'none';
+      }
       return;
     }
 
-    const current = quizData[currentIndex];
-    
+    // 表示処理
     document.getElementById('ans-title').innerText = current.videoTitle || '';
     document.getElementById('ans-artist').innerText = current.artist || '';
     document.getElementById('ans-channel').innerText = current.channelName || '';
@@ -730,6 +885,17 @@
     
     answerCard.style.display = 'block';
     btnAns.innerText = "正解を隠す";
+
+    // 子画面（ポップアウト）の情報更新・表示
+    if (popoutWindow && !popoutWindow.closed) {
+      const pTitle = popoutWindow.document.getElementById('popout-title');
+      const pArtist = popoutWindow.document.getElementById('popout-artist');
+      const pInfo = popoutWindow.document.getElementById('popout-info');
+
+      if (pTitle) pTitle.innerText = current.videoTitle || '無題';
+      if (pArtist) pArtist.innerText = current.artist || '不明';
+      if (pInfo) pInfo.style.display = 'block';
+    }
   }
 
   function applyVideoIdChange() {
@@ -854,7 +1020,6 @@
     });
   }
 
-  // YouTube再生リストの未登録動画をDBへ書き込み保存（ジャンルタグ対応）
   function savePlaylistToDB() {
     const playlistId = document.getElementById('playlist-id-input').value.trim();
     const genreTags = document.getElementById('playlist-tag-input').value.trim();
@@ -869,7 +1034,7 @@
         action: "importPlaylist", 
         playlistId: playlistId, 
         targetSheet: "General",
-        genreTags: genreTags // 入力されたジャンルタグを送信
+        genreTags: genreTags
       })
     })
     .then(res => res.json())
