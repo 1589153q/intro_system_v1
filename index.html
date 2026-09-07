@@ -390,21 +390,28 @@
         }
       });
 
-      // 子画面の準備完了時に時間・再生状態を引き継ぐ
+      // 子画面の準備完了時に「0.1秒再生 ➔ 停止 ➔ 元の秒数へシーク」を実行
       if (currentIndex >= 0 && currentIndex < quizData.length) {
         const current = quizData[currentIndex];
         popoutPlayer.loadVideoById({ videoId: current.youtubeId, startSeconds: currentTime });
         
         setTimeout(() => {
-          if (isMuted) popoutPlayer.mute();
-          else popoutPlayer.unMute();
-          popoutPlayer.setVolume(currentVolume);
+          popoutPlayer.mute(); // 一旦ミュートにする
+          popoutPlayer.playVideo(); // 再生状態を確立するために発火
 
-          if (wasPlaying) {
-            popoutPlayer.playVideo();
-          } else {
+          setTimeout(() => {
             popoutPlayer.pauseVideo();
-          }
+            popoutPlayer.seekTo(currentTime, true);
+
+            // 音量・ミュートの設定を適用
+            if (!isMuted) popoutPlayer.unMute();
+            popoutPlayer.setVolume(currentVolume);
+
+            // ポップアウト前から再生中だった場合のみ再生を再開
+            if (wasPlaying) {
+              popoutPlayer.playVideo();
+            }
+          }, 100); // 0.1秒（100ms）再生
         }, 300);
       }
     };
@@ -457,15 +464,20 @@
       player.loadVideoById({ videoId: current.youtubeId, startSeconds: lastTime });
       
       setTimeout(() => {
-        if (isMuted) player.mute();
-        else player.unMute();
-        player.setVolume(currentVolume);
+        player.mute();
+        player.playVideo();
 
-        if (wasPlaying) {
-          player.playVideo();
-        } else {
+        setTimeout(() => {
           player.pauseVideo();
-        }
+          player.seekTo(lastTime, true);
+
+          if (!isMuted) player.unMute();
+          player.setVolume(currentVolume);
+
+          if (wasPlaying) {
+            player.playVideo();
+          }
+        }, 100); // 0.1秒（100ms）再生して一時停止
       }, 300);
     }
   }
