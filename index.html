@@ -430,83 +430,83 @@
     }
   }
 
-  // 2. 「フィルター適用」ボタン押下時：必要なデータのオンデマンド取得 & キャッシュ＆フィルタリング
-  async function applyFilters() {
-    const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
-    let selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
+ // 2. 「フィルター適用」ボタン押下時：必要なデータのオンデマンド取得 & キャッシュ＆フィルタリング
+async function applyFilters() {
+  const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
+  let selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
 
-    // 未選択の場合は「全シート」を対象とする
-    if (selectedSheets.length === 0) {
-      selectedSheets = [...availableSheetNames];
-    }
+  // 未選択の場合は「全シート」を対象とする
+  if (selectedSheets.length === 0) {
+    selectedSheets = [...availableSheetNames];
+  }
 
-    if (selectedSheets.length === 0) {
-      alert("選択可能なシートがありません。");
+  if (selectedSheets.length === 0) {
+    alert("選択可能なシートがありません。");
+    return;
+  }
+
+  // 未キャッシュのシートを特定 (uncachedSheets)
+  const uncachedSheets = selectedSheets.filter(name => !dataCache[name]);
+
+  if (uncachedSheets.length > 0) {
+    document.getElementById('status').innerText = `データ取得中 (${uncachedSheets.join(', ')})...`;
+    try {
+      const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
+      const res = await fetch(fetchUrl);
+      const resData = await res.json();
+
+      // 取得データをシートごとに分けてキャッシュへ格納
+      uncachedSheets.forEach(sName => { dataCache[sName] = []; });
+      if (resData.data && Array.isArray(resData.data)) {
+        resData.data.forEach(item => {
+          if (dataCache[item.sheetName]) {
+            dataCache[item.sheetName].push(item);
+          }
+        });
+      }
+    } catch (err) {
+      document.getElementById('status').innerText = "データの取得に失敗しました。";
+      console.error(err);
       return;
     }
+  }
 
-    // 未キャッシュのシートを特定
-    const uncachedSheets = selectedSheets.filter(name => !dataCache[name]);
+  // キャッシュ済みの対象シートデータを取り出して統合
+  let combinedData = [];
+  selectedSheets.forEach(sName => {
+    if (dataCache[sName]) {
+      combinedData = combinedData.concat(dataCache[sName]);
+    }
+  });
 
-    if (uncachedSheets.length > 0) {
-      document.getElementById('status').innerText = `データ取得中 (${uncachedSheets.join(', ')})...`;
-      try {
-        const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
-        const res = await fetch(fetchUrl);
-        const resData = await res.json();
+  // 条件フィルタリングの適用
+  const tagInput = document.getElementById('f-tag');
+  const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
 
-        // 取得データをシートごとに分けてキャッシュへ格納
-        uncachedSheets.forEach(sName => { dataCache[sName] = []; });
-        if (resData.data && Array.isArray(resData.data)) {
-          resData.data.forEach(item => {
-            if (dataCache[item.sheetName]) {
-              dataCache[item.sheetName].push(item);
-            }
-          });
-        }
-      } catch (err) {
-        document.getElementById('status').innerText = "データの取得に失敗しました。";
-        console.error(err);
-        return;
+  const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
+  const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
+  const dMin = document.getElementById('f-date-min')?.value;
+  const dMax = document.getElementById('f-date-max')?.value;
+
+  quizData = combinedData.filter(item => {
+    if (tagKeyword) {
+      const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
+      if (!itemTags.toLowerCase().includes(tagKeyword)) {
+        return false;
       }
     }
+    if (item.views < vMin || item.views > vMax) return false;
+    if (dMin && item.postDate < dMin) return false;
+    if (dMax && item.postDate > dMax) return false;
 
-    // キャッシュ済みの対象シートデータを取り出して統合
-    let combinedData = [];
-    selectedSheets.forEach(sName => {
-      if (dataCache[sName]) {
-        combinedData = combinedData.concat(dataCache[sName]);
-      }
-    });
+    return true;
+  });
 
-    // 条件フィルタリングの適用
-    const tagInput = document.getElementById('f-tag');
-    const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
-
-    const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
-    const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
-    const dMin = document.getElementById('f-date-min')?.value;
-    const dMax = document.getElementById('f-date-max')?.value;
-
-    quizData = combinedData.filter(item => {
-      if (tagKeyword) {
-        const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
-        if (!itemTags.toLowerCase().includes(tagKeyword)) {
-          return false;
-        }
-      }
-      if (item.views < vMin || item.views > vMax) return false;
-      if (dMin && item.postDate < dMin) return false;
-      if (dMax && item.postDate > dMax) return false;
-
-      return true;
-    });
-
-    currentIndex = -1;
-    document.getElementById('status').innerText = `該当 ${quizData.length} / 取得済み ${combinedData.length} 問`;
-    updateNavigationButtons();
-    renderSongList();
-  }
+  currentIndex = -1;
+  document.getElementById('status').innerText = `該当 ${quizData.length} / 取得済み ${combinedData.length} 問`;
+  updateNavigationButtons();
+  renderSongList();
+}
 
   function resetFilters() {
     const checkboxes = document.querySelectorAll('input[name="selected-sheets"]');
