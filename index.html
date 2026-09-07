@@ -446,17 +446,17 @@
     }
 
     // 未キャッシュのシートを特定
-    const un-cachedSheets = selectedSheets.filter(name => !dataCache[name]);
+    const uncachedSheets = selectedSheets.filter(name => !dataCache[name]);
 
-    if (un-cachedSheets.length > 0) {
-      document.getElementById('status').innerText = `データ取得中 (${un-cachedSheets.join(', ')})...`;
+    if (uncachedSheets.length > 0) {
+      document.getElementById('status').innerText = `データ取得中 (${uncachedSheets.join(', ')})...`;
       try {
-        const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(un-cachedSheets.join(','))}`;
+        const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
         const res = await fetch(fetchUrl);
         const resData = await res.json();
 
         // 取得データをシートごとに分けてキャッシュへ格納
-        un-cachedSheets.forEach(sName => { dataCache[sName] = []; });
+        uncachedSheets.forEach(sName => { dataCache[sName] = []; });
         if (resData.data && Array.isArray(resData.data)) {
           resData.data.forEach(item => {
             if (dataCache[item.sheetName]) {
