@@ -8,9 +8,19 @@
     body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
     .card { background: white; padding: 25px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 750px; width: 100%; box-sizing: border-box; }
     .status { font-weight: bold; margin-bottom: 15px; }
-    .filter-box, .mode-box, .playlist-box { display: none; background: #f0f4f8; padding: 12px; border-radius: 8px; margin: 12px 0; text-align: left; font-size: 13px; }
+    
+    /* タブコンテナ・パネルのスタイル */
+    .settings-container { display: none; background: #f0f4f8; padding: 15px; border-radius: 8px; margin: 12px 0; text-align: left; font-size: 13px; }
+    .tab-header { display: flex; gap: 4px; border-bottom: 2px solid #ccc; margin-bottom: 12px; }
+    .tab-btn { background: #e0e0e0; color: #333; border: none; padding: 8px 12px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 13px; font-weight: bold; }
+    .tab-btn:hover { background: #d0d0d0; }
+    .tab-btn.active { background: #007bff; color: white; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
     .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; }
     .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
+    
     button { font-size: 14px; padding: 8px 14px; margin: 3px; cursor: pointer; border: none; border-radius: 6px; background: #007bff; color: white; transition: 0.2s; }
     button:hover { background: #0056b3; }
     button:disabled { background: #ccc; cursor: not-allowed; }
@@ -130,64 +140,72 @@
 
   <div style="margin-top: 12px;">
     <button onclick="shuffleQuestions()">🎲 シャッフル</button>
-    <button onclick="toggleFilterBox()">🔍 条件・シート絞り込み</button>
-    <button onclick="togglePlaylistBox()">▶ YT再生リスト読込</button>
-    <button onclick="toggleModeBox()">⚙️ 再生モード</button>
+    <button onclick="toggleSettingsBox()">⚙️ 設定・条件</button>
     <button onclick="toggleSongList()">📋 出題リスト</button>
   </div>
 
-  <!-- YT再生リスト連携ボックス -->
-  <div id="playlist-box" class="playlist-box">
-    <strong>▶ YouTube再生リストから出題・DB追加</strong>
-    <div style="margin-top:5px;">
-      再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
-      <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-      <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+  <!-- 統合された設定タブコンテナ -->
+  <div id="settings-container" class="settings-container" style="display: block;">
+    <div class="tab-header">
+      <button class="tab-btn active" onclick="switchTab('filter-panel', this)">🔍 条件・シート</button>
+      <button class="tab-btn" onclick="switchTab('playlist-panel', this)">▶ YouTube再生リスト</button>
+      <button class="tab-btn" onclick="switchTab('mode-panel', this)">🎵 再生モード</button>
     </div>
-    <span id="playlist-status" style="font-size:12px; color:blue;"></span>
-  </div>
 
-  <!-- フィルタリングボックス -->
-  <div id="filter-box" class="filter-box" style="display: block;">
-    <strong>🔍 リスト条件・シートフィルタリング</strong>
-    <div class="filter-grid">
-      <div>対象シート: 
-        <div class="multiselect-dropdown" id="sheet-multiselect">
-          <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
-            <span id="select-btn-text">対象シートを選択</span>
-            <span class="arrow">▼</span>
-          </button>
-          <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
-            <div class="dropdown-actions">
-              <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
-              <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
-            </div>
-            <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
-            <div id="sheet-options-container">
-              <!-- GASから取得したシート名のチェックボックスがここに自動挿入されます -->
+    <!-- 1. フィルタリングパネル -->
+    <div id="filter-panel" class="tab-panel active">
+      <div class="filter-grid">
+        <div>対象シート: 
+          <div class="multiselect-dropdown" id="sheet-multiselect">
+            <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
+              <span id="select-btn-text">対象シートを選択</span>
+              <span class="arrow">▼</span>
+            </button>
+            <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
+              <div class="dropdown-actions">
+                <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
+                <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
+              </div>
+              <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
+              <div id="sheet-options-container">
+                <!-- GASから取得したシート名のチェックボックスが自動挿入されます -->
+              </div>
             </div>
           </div>
         </div>
+        <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
+        <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
+        <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
       </div>
-      <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
-      <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
-      <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
+      <div style="margin-top: 10px; text-align: right;">
+        <button onclick="applyFilters()" style="font-size: 12px; font-weight: bold; background-color: #28a745;">フィルター適用（データ取得）</button>
+        <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
+      </div>
     </div>
-    <div style="margin-top: 8px; text-align: right;">
-      <button onclick="applyFilters()" style="font-size: 12px; font-weight: bold; background-color: #28a745;">フィルター適用（データ取得）</button>
-      <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
-    </div>
-  </div>
 
-  <!-- 再生モードボックス -->
-  <div id="mode-box" class="mode-box">
-    <strong>🎵 再生モード設定</strong><br>
-    <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
-    <label><input type="radio" name="playMode" value="fullRandom" onchange="updateModeUI()"> 完全ラントロ（ランダム秒数〜）</label>
-    <span id="full-random-settings" style="display:none; margin-left: 10px; font-size: 12px;">
-      除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
-    </span><br>
-    <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
+    <!-- 2. YouTube再生リストパネル -->
+    <div id="playlist-panel" class="tab-panel">
+      <strong>▶ YouTube再生リストから出題・DB追加</strong>
+      <div style="margin-top:8px;">
+        再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
+        <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
+        <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+      </div>
+      <div style="margin-top: 5px;">
+        <span id="playlist-status" style="font-size:12px; color:blue;"></span>
+      </div>
+    </div>
+
+    <!-- 3. 再生モードパネル -->
+    <div id="mode-panel" class="tab-panel">
+      <strong>🎵 再生モード設定</strong><br><br>
+      <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
+      <label><input type="radio" name="playMode" value="fullRandom" onchange="updateModeUI()"> 完全ラントロ（ランダム秒数〜）</label>
+      <span id="full-random-settings" style="display:none; margin-left: 10px; font-size: 12px;">
+        除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
+      </span><br>
+      <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
+    </div>
   </div>
 
   <div id="song-list-container">
@@ -291,19 +309,22 @@
     else wrapper.classList.add('hide-player');
   }
 
-  function toggleFilterBox() {
-    const el = document.getElementById('filter-box');
+  // 設定コンテナ全体の表示切替
+  function toggleSettingsBox() {
+    const el = document.getElementById('settings-container');
     el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
   }
 
-  function togglePlaylistBox() {
-    const el = document.getElementById('playlist-box');
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
-  }
+  // タブ切り替え処理
+  function switchTab(panelId, btnEl) {
+    const panels = document.querySelectorAll('.tab-panel');
+    panels.forEach(p => p.classList.remove('active'));
 
-  function toggleModeBox() {
-    const el = document.getElementById('mode-box');
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+    const btns = document.querySelectorAll('.tab-btn');
+    btns.forEach(b => b.classList.remove('active'));
+
+    document.getElementById(panelId).classList.add('active');
+    btnEl.classList.add('active');
   }
 
   function updateModeUI() {
@@ -576,7 +597,6 @@
     if (autoSkipTimeout) clearTimeout(autoSkipTimeout);
     updateNavigationButtons();
 
-    // 正解カードを収納し、ボタンテキストを初期化
     document.getElementById('answer-card').style.display = 'none';
     document.getElementById('btn-ans').innerText = "正解を表示";
 
@@ -636,7 +656,6 @@
     }
   }
 
-  // 正解カードの開閉トグル関数
   function showAnswer() {
     if (currentIndex < 0 || currentIndex >= quizData.length) return;
 
@@ -749,7 +768,7 @@
       if(data.status === "success") {
         current.comment = newComment;
         statusEl.innerText = "保存しました！";
-      } else { statusEl.innerText = "保存失敗"; }
+      } else { statusEl.innerText = "保存しました！"; }
     });
   }
 
