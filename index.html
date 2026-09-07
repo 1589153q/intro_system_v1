@@ -333,12 +333,13 @@
       return;
     }
 
-    // 遷移直前の親プレイヤーの再生状態・時間を保持
+    // 移行前のメイン画面の再生状態と経過秒数を保持
     let currentTime = 0;
-    let wasPlaying = isPlaying;
+    const wasPlaying = isPlaying;
+
     if (player && player.getCurrentTime) {
       currentTime = player.getCurrentTime() || 0;
-      if (player.pauseVideo) player.pauseVideo(); // 親を停止して競合回避
+      if (player.pauseVideo) player.pauseVideo();
     }
 
     popoutWindow = window.open("", "IntroQuizPopout", "width=700,height=550");
@@ -384,22 +385,30 @@
         host: 'https://www.youtube.com',
         playerVars: { 'playsinline': 1, 'controls': 0 },
         events: {
-          'onStateChange': (e) => onPlayerStateChange(e),
-          'onError': (e) => onPlayerError(e)
+          'onStateChange': (e) => window.opener ? window.opener.onPlayerStateChange(e) : onPlayerStateChange(e),
+          'onError': (e) => window.opener ? window.opener.onPlayerError(e) : onPlayerError(e)
         }
       });
 
-      // 子画面の準備が完了した段階で現出題動画・時間を引き継ぎロード
+      // 子画面の準備完了時に時間・再生状態を引き継ぐ
       if (currentIndex >= 0 && currentIndex < quizData.length) {
         const current = quizData[currentIndex];
         popoutPlayer.loadVideoById({ videoId: current.youtubeId, startSeconds: currentTime });
-        if (!wasPlaying) {
-          setTimeout(() => { popoutPlayer.pauseVideo(); }, 300);
-        }
+        
+        setTimeout(() => {
+          if (isMuted) popoutPlayer.mute();
+          else popoutPlayer.unMute();
+          popoutPlayer.setVolume(currentVolume);
+
+          if (wasPlaying) {
+            popoutPlayer.playVideo();
+          } else {
+            popoutPlayer.pauseVideo();
+          }
+        }, 300);
       }
     };
 
-    // ポップアウト閉鎖検知タイマーを設定
     startPopoutCloseMonitor();
 
     // 正解カード表示状態の同期
@@ -421,7 +430,6 @@
     setTimeout(() => { syncVideoVisibility(); }, 500);
   }
 
-  // ポップアウト画面が閉じられたか常時監視してメイン画面へ状況を復帰
   function startPopoutCloseMonitor() {
     if (popoutCheckInterval) clearInterval(popoutCheckInterval);
     
@@ -436,7 +444,7 @@
   // ポップアウト終了時の状態引き継ぎ処理
   function onPopoutClosed() {
     let lastTime = 0;
-    let wasPlaying = isPlaying;
+    const wasPlaying = isPlaying;
 
     if (popoutPlayer && popoutPlayer.getCurrentTime) {
       lastTime = popoutPlayer.getCurrentTime() || 0;
@@ -444,13 +452,21 @@
     popoutPlayer = null;
     popoutWindow = null;
 
-    // メイン画面のプレイヤーへ時間と動画を引き継ぎ
     if (currentIndex >= 0 && currentIndex < quizData.length && player) {
       const current = quizData[currentIndex];
       player.loadVideoById({ videoId: current.youtubeId, startSeconds: lastTime });
-      if (!wasPlaying) {
-        setTimeout(() => { player.pauseVideo(); }, 300);
-      }
+      
+      setTimeout(() => {
+        if (isMuted) player.mute();
+        else player.unMute();
+        player.setVolume(currentVolume);
+
+        if (wasPlaying) {
+          player.playVideo();
+        } else {
+          player.pauseVideo();
+        }
+      }, 300);
     }
   }
 
