@@ -35,62 +35,64 @@
     .input-row input, .input-row textarea { flex: 1; font-size: 13px; padding: 4px; }
     #song-list-container { display: none; margin-top: 15px; text-align: left; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fafafa; }
     #song-list-container ol { padding-left: 20px; margin: 0; font-size: 13px; }
+    
     /* 複数選択ドロップダウンのスタイル */
-.multiselect-dropdown {
-  position: relative;
-  display: inline-block;
-  min-width: 200px;
-}
+    .multiselect-dropdown {
+      position: relative;
+      display: inline-block;
+      min-width: 200px;
+    }
 
-.select-btn {
-  width: 100%;
-  padding: 6px 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+    .select-btn {
+      width: 100%;
+      padding: 6px 10px;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #333;
+    }
 
-.dropdown-content {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 1000;
-  padding: 6px;
-}
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 1000;
+      padding: 6px;
+    }
 
-.dropdown-content.show {
-  display: block;
-}
+    .dropdown-content.show {
+      display: block;
+    }
 
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  padding: 4px 6px;
-  cursor: pointer;
-  user-select: none;
-}
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      padding: 4px 6px;
+      cursor: pointer;
+      user-select: none;
+    }
 
-.dropdown-item:hover {
-  background-color: #f0f0f0;
-}
+    .dropdown-item:hover {
+      background-color: #f0f0f0;
+    }
 
-.dropdown-item input[type="checkbox"] {
-  margin-right: 8px;
-  cursor: pointer;
-}
+    .dropdown-item input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -146,36 +148,36 @@
   </div>
 
   <!-- フィルタリングボックス -->
-<div id="filter-box" class="filter-box">
-  <strong>🔍 リスト条件・シートフィルタリング</strong>
-  <div class="filter-grid">
-    <div>対象シート: 
-      <div class="multiselect-dropdown" id="sheet-multiselect">
-        <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
-          <span id="select-btn-text">対象シートを選択 (全表示)</span>
-          <span class="arrow">▼</span>
-        </button>
-        <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
-          <div class="dropdown-actions">
-            <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
-            <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
-          </div>
-          <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
-          <div id="sheet-options-container">
-            <!-- GASから取得したシート名のチェックボックスがここに自動挿入されます -->
+  <div id="filter-box" class="filter-box">
+    <strong>🔍 リスト条件・シートフィルタリング</strong>
+    <div class="filter-grid">
+      <div>対象シート: 
+        <div class="multiselect-dropdown" id="sheet-multiselect">
+          <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
+            <span id="select-btn-text">対象シートを選択 (全表示)</span>
+            <span class="arrow">▼</span>
+          </button>
+          <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
+            <div class="dropdown-actions">
+              <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
+              <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
+            </div>
+            <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
+            <div id="sheet-options-container">
+              <!-- GASから取得したシート名のチェックボックスがここに自動挿入されます -->
+            </div>
           </div>
         </div>
       </div>
+      <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
+      <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
+      <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
     </div>
-    <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
-    <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
-    <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
+    <div style="margin-top: 8px; text-align: right;">
+      <button onclick="applyFilters()" style="font-size: 12px;">フィルター適用</button>
+      <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
+    </div>
   </div>
-  <div style="margin-top: 8px; text-align: right;">
-    <button onclick="applyFilters()" style="font-size: 12px;">フィルター適用</button>
-    <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
-  </div>
-</div>
 
   <!-- 再生モードボックス -->
   <div id="mode-box" class="mode-box">
@@ -346,59 +348,124 @@
   }
 
   function fetchQuizData() {
-  fetch(GAS_URL)
-    .then(res => res.json())
-    .then(resData => {
-      // GASからのレスポンス形式に合わせてデータとシート一覧を取得
-      // （※もしレスポンスが { sheetNames: [...], data: [...] } の構造の場合）
-      if (resData.sheetNames && resData.data) {
-        rawQuizData = resData.data;
-        updateSheetSelectOptions(resData.sheetNames);
-      } else {
-        // 従来の配列直受けの場合のフォールバック
-        rawQuizData = resData;
-        // 取得データ内から一意なsheetNameを抽出して動的生成することも可能
-        const uniqueSheets = [...new Set(rawQuizData.map(item => item.sheetName).filter(Boolean))];
-        updateSheetSelectOptions(uniqueSheets);
-      }
-      
-      applyFilters();
-    })
-    .catch(err => {
-      document.getElementById('status').innerText = "データの取得に失敗しました。";
-      console.error(err);
-    });
-}
+    fetch(GAS_URL)
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.sheetNames && resData.data) {
+          rawQuizData = resData.data;
+          updateSheetSelectOptions(resData.sheetNames);
+        } else {
+          rawQuizData = Array.isArray(resData) ? resData : [];
+          const uniqueSheets = [...new Set(rawQuizData.map(item => item.sheetName).filter(Boolean))];
+          updateSheetSelectOptions(uniqueSheets);
+        }
+        applyFilters();
+      })
+      .catch(err => {
+        document.getElementById('status').innerText = "データの取得に失敗しました。";
+        console.error(err);
+      });
+  }
 
-// シート名の選択肢を動的に生成する関数
-function updateSheetSelectOptions(sheetNames) {
-  const selectEl = document.getElementById('f-sheet');
-  
-  // 「すべてのシート(ALL)」以外の既存オプションをクリア
-  selectEl.innerHTML = '<option value="ALL">すべてのシート</option>';
-  
-  sheetNames.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.innerText = name; // スプレッドシートのシート名がそのまま表示されます
-    selectEl.appendChild(opt);
+  // ドロップダウンの開閉制御
+  function toggleSheetDropdown(event) {
+    event.stopPropagation();
+    const content = document.getElementById('sheet-checkbox-list');
+    content.classList.toggle('show');
+  }
+
+  // ドロップダウン外クリックで閉じる
+  window.addEventListener('click', function() {
+    const content = document.getElementById('sheet-checkbox-list');
+    if (content && content.classList.contains('show')) {
+      content.classList.remove('show');
+    }
   });
-}
+
+  // GASから受け取ったシート名一覧からチェックボックスを動的生成
+  function updateSheetSelectOptions(sheetNames) {
+    const container = document.getElementById('sheet-options-container');
+    if (!container) return;
+    container.innerHTML = ''; // クリア
+
+    sheetNames.forEach(name => {
+      const label = document.createElement('label');
+      label.className = 'dropdown-item';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = name;
+      checkbox.name = 'selected-sheets';
+      checkbox.checked = false;
+
+      checkbox.addEventListener('change', () => {
+        updateSelectButtonText();
+        applyFilters();
+      });
+
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(name));
+      container.appendChild(label);
+    });
+
+    updateSelectButtonText();
+  }
+
+  function selectAllSheets(select) {
+    const checkboxes = document.querySelectorAll('input[name="selected-sheets"]');
+    checkboxes.forEach(cb => { cb.checked = select; });
+    updateSelectButtonText();
+    applyFilters();
+  }
+
+  function updateSelectButtonText() {
+    const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
+    const btnText = document.getElementById('select-btn-text');
+    if (!btnText) return;
+    
+    if (checkedBoxes.length === 0) {
+      btnText.innerText = '対象シートを選択 (全表示)';
+    } else {
+      const selectedNames = Array.from(checkedBoxes).map(cb => cb.value);
+      if (selectedNames.length <= 2) {
+        btnText.innerText = selectedNames.join(', ');
+      } else {
+        btnText.innerText = `${selectedNames.length}個のシートを選択中`;
+      }
+    }
+  }
 
   function applyFilters() {
-    const selectedSheet = document.getElementById('f-sheet').value;
-    const tagKeyword = document.getElementById('f-tag').value.trim();
-    const vMin = Number(document.getElementById('f-views-min').value) || 0;
-    const vMax = Number(document.getElementById('f-views-max').value) || Infinity;
-    const dMin = document.getElementById('f-date-min').value;
-    const dMax = document.getElementById('f-date-max').value;
+    const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
+    const selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
+
+    const tagInput = document.getElementById('f-tag');
+    const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
+
+    const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
+    const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
+    const dMin = document.getElementById('f-date-min')?.value;
+    const dMax = document.getElementById('f-date-max')?.value;
 
     quizData = rawQuizData.filter(item => {
-      if (selectedSheet !== "ALL" && item.sheetName !== selectedSheet) return false;
-      if (tagKeyword && (!item.tags || !item.tags.some(t => t.includes(tagKeyword)))) return false;
+      // 1. シート絞り込み判定
+      if (selectedSheets.length > 0 && !selectedSheets.includes(item.sheetName)) {
+        return false;
+      }
+
+      // 2. タグ検索判定
+      if (tagKeyword) {
+        const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
+        if (!itemTags.toLowerCase().includes(tagKeyword)) {
+          return false;
+        }
+      }
+
+      // 3. 再生数・投稿日フィルタ
       if (item.views < vMin || item.views > vMax) return false;
       if (dMin && item.postDate < dMin) return false;
       if (dMax && item.postDate > dMax) return false;
+
       return true;
     });
 
@@ -409,12 +476,21 @@ function updateSheetSelectOptions(sheetNames) {
   }
 
   function resetFilters() {
-    document.getElementById('f-sheet').value = "ALL";
-    document.getElementById('f-tag').value = "";
-    document.getElementById('f-views-min').value = "";
-    document.getElementById('f-views-max').value = "";
-    document.getElementById('f-date-min').value = "";
-    document.getElementById('f-date-max').value = "";
+    const checkboxes = document.querySelectorAll('input[name="selected-sheets"]');
+    checkboxes.forEach(cb => { cb.checked = false; });
+    updateSelectButtonText();
+
+    const resetValue = (id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    };
+
+    resetValue('f-tag');
+    resetValue('f-views-min');
+    resetValue('f-views-max');
+    resetValue('f-date-min');
+    resetValue('f-date-max');
+
     applyFilters();
   }
 
@@ -431,7 +507,8 @@ function updateSheetSelectOptions(sheetNames) {
 
   function renderSongList() {
     const listEl = document.getElementById('song-list');
-    listEl.innerHTML = quizData.map(item => `<li>${item.videoTitle} (${item.artist})</li>`).join('');
+    if (!listEl) return;
+    listEl.innerHTML = quizData.map(item => `<li>${item.videoTitle || '無題'} (${item.artist || '不明'})</li>`).join('');
   }
 
   function toggleSongList() {
@@ -515,13 +592,13 @@ function updateSheetSelectOptions(sheetNames) {
     if (currentIndex < 0 || currentIndex >= quizData.length) return;
     const current = quizData[currentIndex];
     
-    document.getElementById('ans-title').innerText = current.videoTitle;
-    document.getElementById('ans-artist').innerText = current.artist;
-    document.getElementById('ans-channel').innerText = current.channelName;
-    document.getElementById('ans-date').innerText = current.postDate;
-    document.getElementById('ans-views').innerText = current.views.toLocaleString();
-    document.getElementById('ans-likes').innerText = current.likes.toLocaleString();
-    document.getElementById('ans-snippet').innerText = current.description;
+    document.getElementById('ans-title').innerText = current.videoTitle || '';
+    document.getElementById('ans-artist').innerText = current.artist || '';
+    document.getElementById('ans-channel').innerText = current.channelName || '';
+    document.getElementById('ans-date').innerText = current.postDate || '';
+    document.getElementById('ans-views').innerText = (current.views || 0).toLocaleString();
+    document.getElementById('ans-likes').innerText = (current.likes || 0).toLocaleString();
+    document.getElementById('ans-snippet').innerText = current.description || '';
     
     const selectEl = document.getElementById('video-id-select');
     selectEl.innerHTML = "";
@@ -543,7 +620,6 @@ function updateSheetSelectOptions(sheetNames) {
     document.getElementById('answer-card').style.display = 'block';
   }
 
-  // 書き換え保存（sheetNameとrowIndexを渡すように対応）
   function applyVideoIdChange() {
     const current = quizData[currentIndex];
     const newYoutubeId = document.getElementById('video-id-select').value;
@@ -616,7 +692,6 @@ function updateSheetSelectOptions(sheetNames) {
     });
   }
 
-  // YouTube再生リストの未登録動画をDBへ書き込み保存
   function savePlaylistToDB() {
     const playlistId = document.getElementById('playlist-id-input').value.trim();
     const statusEl = document.getElementById('playlist-status');
@@ -632,94 +707,10 @@ function updateSheetSelectOptions(sheetNames) {
       if (data.status === "success") {
         const res = data.result;
         statusEl.innerText = `完了！ 新規追加: ${res.addedCount}件 / スキップ(重複): ${res.skippedCount}件`;
-        fetchQuizData(); // 最新データを再取得
+        fetchQuizData();
       } else { statusEl.innerText = "保存失敗"; }
     });
   }
-
-  // ドロップダウンの開閉制御
-function toggleSheetDropdown(event) {
-  event.stopPropagation();
-  const content = document.getElementById('sheet-checkbox-list');
-  content.classList.toggle('show');
-}
-
-// ドロップダウン外クリックで閉じる
-window.addEventListener('click', function() {
-  const content = document.getElementById('sheet-checkbox-list');
-  if (content && content.classList.contains('show')) {
-    content.classList.remove('show');
-  }
-});
-
-// GASから受け取ったシート名一覧からチェックボックスを動的生成
-function updateSheetSelectOptions(sheetNames) {
-  const listContainer = document.getElementById('sheet-checkbox-list');
-  listContainer.innerHTML = ''; // クリア
-
-  sheetNames.forEach(name => {
-    const label = document.createElement('label');
-    label.className = 'dropdown-item';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.value = name;
-    checkbox.name = 'selected-sheets';
-    // デフォルトはチェックなし
-    checkbox.checked = false;
-
-    // チェック変更時にフィルター再適用とボタン表示の更新を行う
-    checkbox.addEventListener('change', () => {
-      updateSelectButtonText();
-      applyFilters();
-    });
-
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(name));
-    listContainer.appendChild(label);
-  });
-
-  updateSelectButtonText();
-}
-
-// ボタンのテキスト表記（選択数など）を更新する関数
-function updateSelectButtonText() {
-  const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
-  const btnText = document.getElementById('select-btn-text');
-  
-  if (checkedBoxes.length === 0) {
-    btnText.innerText = '対象シートを選択 (全表示)';
-  } else {
-    const selectedNames = Array.from(checkedBoxes).map(cb => cb.value);
-    if (selectedNames.length <= 2) {
-      btnText.innerText = selectedNames.join(', ');
-    } else {
-      btnText.innerText = `${selectedNames.length}個のシートを選択中`;
-    }
-  }
-}
-
-// フィルタリング処理（applyFilters）内の変更箇所
-function applyFilters() {
-  // 選択されているすべてのシート名を取得
-  const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
-  const selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
-
-  const filteredData = rawQuizData.filter(item => {
-    // 1. シート絞り込み判定
-    // 選択なし（長さ0）の場合は「全シート対象」、選択がある場合は「選択リストに含まれているか」を判定
-    const sheetMatches = selectedSheets.length === 0 || selectedSheets.includes(item.sheetName);
-
-    // 2. 他の条件（キーワードやタグなど、既存の処理）
-    // const keywordMatches = ... ;
-
-    return sheetMatches /* && keywordMatches */;
-  });
-
-  // 絞り込み結果の表示描画へ...
-  renderQuizList(filteredData);
-}
-  
 </script>
 
 </body>
