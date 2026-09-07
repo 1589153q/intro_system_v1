@@ -299,6 +299,7 @@
   let player;
   let popoutWindow = null;
   let popoutPlayer = null;
+  let popoutCheckInterval = null;
   let isPlaying = false;
   let actualStartSec = 0;
   let seekTimer = null;
@@ -306,6 +307,10 @@
   let autoSkipTimeout = null;
   let currentVolume = 100;
   let isMuted = false;
+
+  function isPopoutActive() {
+    return popoutWindow && !popoutWindow.closed && popoutPlayer;
+  }
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -321,11 +326,19 @@
     fetchSheetMetadata();
   }
 
-  // ポップアウト（子画面）ウィンドウの開設関数
+  // ポップアウト（子画面）ウィンドウを開く関数
   function openPopoutWindow() {
     if (popoutWindow && !popoutWindow.closed) {
       popoutWindow.focus();
       return;
+    }
+
+    // 遷移直前の親プレイヤーの再生状態・時間を保持
+    let currentTime = 0;
+    let wasPlaying = isPlaying;
+    if (player && player.getCurrentTime) {
+      currentTime = player.getCurrentTime() || 0;
+      if (player.pauseVideo) player.pauseVideo(); // 親を停止して競合回避
     }
 
     popoutWindow = window.open("", "IntroQuizPopout", "width=700,height=550");
@@ -360,7 +373,6 @@
       </html>
     `);
 
-    // 子画面側に YouTube Iframe API スクリプトを注入
     const script = doc.createElement('script');
     script.src = "https://www.youtube.com/iframe_api";
     doc.head.appendChild(script);
@@ -376,31 +388,87 @@
           'onError': (e) => onPlayerError(e)
         }
       });
+
+      // 子画面の準備が完了した段階で現出題動画・時間を引き継ぎロード
+      if (currentIndex >= 0 && currentIndex < quizData.length) {
+        const current = quizData[currentIndex];
+        popoutPlayer.loadVideoById({ videoId: current.youtubeId, startSeconds: currentTime });
+        if (!wasPlaying) {
+          setTimeout(() => { popoutPlayer.pauseVideo(); }, 300);
+        }
+      }
     };
 
-    // 初期表示トグルの状態を同期
-    setTimeout(() => {
-      syncVideoVisibility();
+    // ポップアウト閉鎖検知タイマーを設定
+    startPopoutCloseMonitor();
+
+    // 正解カード表示状態の同期
+    const isAnswerShown = document.getElementById('answer-card').style.display === 'block';
+    if (isAnswerShown && currentIndex >= 0 && currentIndex < quizData.length) {
+      const current = quizData[currentIndex];
+      setTimeout(() => {
+        if (popoutWindow && !popoutWindow.closed) {
+          const pTitle = popoutWindow.document.getElementById('popout-title');
+          const pArtist = popoutWindow.document.getElementById('popout-artist');
+          const pInfo = popoutWindow.document.getElementById('popout-info');
+          if (pTitle) pTitle.innerText = current.videoTitle || '無題';
+          if (pArtist) pArtist.innerText = current.artist || '不明';
+          if (pInfo) pInfo.style.display = 'block';
+        }
+      }, 500);
+    }
+
+    setTimeout(() => { syncVideoVisibility(); }, 500);
+  }
+
+  // ポップアウト画面が閉じられたか常時監視してメイン画面へ状況を復帰
+  function startPopoutCloseMonitor() {
+    if (popoutCheckInterval) clearInterval(popoutCheckInterval);
+    
+    popoutCheckInterval = setInterval(() => {
+      if (popoutWindow && popoutWindow.closed) {
+        clearInterval(popoutCheckInterval);
+        onPopoutClosed();
+      }
     }, 500);
   }
 
-  // 音量スライダーの変更処理
+  // ポップアウト終了時の状態引き継ぎ処理
+  function onPopoutClosed() {
+    let lastTime = 0;
+    let wasPlaying = isPlaying;
+
+    if (popoutPlayer && popoutPlayer.getCurrentTime) {
+      lastTime = popoutPlayer.getCurrentTime() || 0;
+    }
+    popoutPlayer = null;
+    popoutWindow = null;
+
+    // メイン画面のプレイヤーへ時間と動画を引き継ぎ
+    if (currentIndex >= 0 && currentIndex < quizData.length && player) {
+      const current = quizData[currentIndex];
+      player.loadVideoById({ videoId: current.youtubeId, startSeconds: lastTime });
+      if (!wasPlaying) {
+        setTimeout(() => { player.pauseVideo(); }, 300);
+      }
+    }
+  }
+
   function changeVolume(val) {
     currentVolume = Number(val);
     document.getElementById('volume-text').innerText = `${currentVolume}%`;
     
     if (player && player.setVolume) player.setVolume(currentVolume);
-    if (popoutPlayer && popoutPlayer.setVolume) popoutPlayer.setVolume(currentVolume);
+    if (isPopoutActive() && popoutPlayer.setVolume) popoutPlayer.setVolume(currentVolume);
   }
 
-  // ミュートの切り替え処理
   function toggleMute(muted) {
     isMuted = muted;
     if (player) {
       if (isMuted) player.mute();
       else player.unMute();
     }
-    if (popoutPlayer) {
+    if (isPopoutActive()) {
       if (isMuted) popoutPlayer.mute();
       else popoutPlayer.unMute();
     }
@@ -426,7 +494,6 @@
     if (isChecked) wrapper.classList.remove('hide-player');
     else wrapper.classList.add('hide-player');
 
-    // 子画面（ポップアウト）側への同期
     if (popoutWindow && !popoutWindow.closed) {
       const popoutWrapper = popoutWindow.document.getElementById('popout-player-wrapper');
       if (popoutWrapper) {
@@ -489,7 +556,7 @@
   }
 
   function updateSeekBarUI() {
-    const activePlayer = (popoutPlayer && popoutWindow && !popoutWindow.closed) ? popoutPlayer : player;
+    const activePlayer = isPopoutActive() ? popoutPlayer : player;
     if (!activePlayer || isUserSeeking || !activePlayer.getCurrentTime) return;
     
     const current = activePlayer.getCurrentTime() || 0;
@@ -511,9 +578,12 @@
 
   function onSeekChange() {
     const seekBar = document.getElementById('seek-bar');
-    if (player && player.seekTo) player.seekTo(seekBar.value, true);
-    if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.seekTo) {
-      popoutPlayer.seekTo(seekBar.value, true);
+    const targetSec = seekBar.value;
+
+    if (isPopoutActive()) {
+      if (popoutPlayer.seekTo) popoutPlayer.seekTo(targetSec, true);
+    } else {
+      if (player && player.seekTo) player.seekTo(targetSec, true);
     }
     isUserSeeking = false;
   }
@@ -749,7 +819,6 @@
     document.getElementById('answer-card').style.display = 'none';
     document.getElementById('btn-ans').innerText = "正解を表示";
 
-    // 子画面の情報カードも非表示へ
     if (popoutWindow && !popoutWindow.closed) {
       const pInfo = popoutWindow.document.getElementById('popout-info');
       if (pInfo) pInfo.style.display = 'none';
@@ -763,18 +832,13 @@
     const current = quizData[currentIndex];
     const mode = document.querySelector('input[name="playMode"]:checked').value;
 
-    // 親画面プレイヤーのロード
-    player.mute();
-    player.loadVideoById({ videoId: current.youtubeId });
+    const targetPlayer = isPopoutActive() ? popoutPlayer : player;
 
-    // 子画面（ポップアウト）プレイヤーのロード
-    if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
-      popoutPlayer.mute();
-      popoutPlayer.loadVideoById({ videoId: current.youtubeId });
-    }
+    targetPlayer.mute();
+    targetPlayer.loadVideoById({ videoId: current.youtubeId });
 
     setTimeout(() => {
-      const duration = player.getDuration() || 180;
+      const duration = targetPlayer.getDuration() || 180;
       actualStartSec = 0;
 
       if (mode === 'customSec') {
@@ -793,19 +857,11 @@
         }
       }
 
-      player.seekTo(actualStartSec, true);
-      if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
-        popoutPlayer.seekTo(actualStartSec, true);
-      }
+      targetPlayer.seekTo(actualStartSec, true);
       
       setTimeout(() => {
-        player.pauseVideo();
-        player.seekTo(actualStartSec, true);
-
-        if (popoutPlayer && popoutWindow && !popoutWindow.closed) {
-          popoutPlayer.pauseVideo();
-          popoutPlayer.seekTo(actualStartSec, true);
-        }
+        targetPlayer.pauseVideo();
+        targetPlayer.seekTo(actualStartSec, true);
 
         document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
         document.getElementById('btn-toggle').disabled = false;
@@ -818,21 +874,16 @@
   }
 
   function togglePlay() {
+    const activePlayer = isPopoutActive() ? popoutPlayer : player;
+    if (!activePlayer) return;
+
     if (isPlaying) {
-      if (player && player.pauseVideo) player.pauseVideo();
-      if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.pauseVideo) {
-        popoutPlayer.pauseVideo();
-      }
+      if (activePlayer.pauseVideo) activePlayer.pauseVideo();
     } else {
-      if (player && player.playVideo) {
-        if (!isMuted) player.unMute();
-        player.setVolume(currentVolume);
-        player.playVideo();
-      }
-      if (popoutPlayer && popoutWindow && !popoutWindow.closed && popoutPlayer.playVideo) {
-        if (!isMuted) popoutPlayer.unMute();
-        popoutPlayer.setVolume(currentVolume);
-        popoutPlayer.playVideo();
+      if (activePlayer.playVideo) {
+        if (!isMuted) activePlayer.unMute();
+        if (activePlayer.setVolume) activePlayer.setVolume(currentVolume);
+        activePlayer.playVideo();
       }
     }
   }
@@ -844,7 +895,6 @@
     const btnAns = document.getElementById('btn-ans');
     const current = quizData[currentIndex];
 
-    // 非表示（隠す）処理
     if (answerCard.style.display === 'block') {
       answerCard.style.display = 'none';
       btnAns.innerText = "正解を表示";
@@ -856,7 +906,6 @@
       return;
     }
 
-    // 表示処理
     document.getElementById('ans-title').innerText = current.videoTitle || '';
     document.getElementById('ans-artist').innerText = current.artist || '';
     document.getElementById('ans-channel').innerText = current.channelName || '';
@@ -886,7 +935,6 @@
     answerCard.style.display = 'block';
     btnAns.innerText = "正解を隠す";
 
-    // 子画面（ポップアウト）の情報更新・表示
     if (popoutWindow && !popoutWindow.closed) {
       const pTitle = popoutWindow.document.getElementById('popout-title');
       const pArtist = popoutWindow.document.getElementById('popout-artist');
