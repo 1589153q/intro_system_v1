@@ -236,7 +236,7 @@
       <span id="comment-save-status" style="font-size: 12px; color: green;"></span>
     </div>
 
-    <!-- 新設：データ無効化ボタン -->
+    <!-- データ無効化ボタン -->
     <div style="margin-top: 15px; text-align: right; border-top: 1px solid #ddd; padding-top: 10px;">
       <button onclick="disableCurrentSong()" style="font-size: 12px; background-color: #dc3545;">🚫 この曲を無効化（DB非表示）</button>
       <span id="disable-status" style="font-size: 12px; color: red; margin-left: 5px;"></span>
@@ -268,13 +268,12 @@
       playerVars: { 'playsinline': 1, 'controls': 0, 'origin': window.location.origin },
       events: { 
         'onStateChange': onPlayerStateChange,
-        'onError': onPlayerError // 自動スキップ用エラーハンドラ
+        'onError': onPlayerError
       }
     });
     fetchSheetMetadata();
   }
 
-  // YouTube読み込みエラー発生時の自動スキップ処理
   function onPlayerError(event) {
     console.warn("YouTube Player Error Code:", event.data);
     document.getElementById('status').innerText = `⚠️ 動画の再生エラー (Error: ${event.data})。自動で次の曲へスキップします...`;
@@ -576,7 +575,11 @@
   function loadCurrentQuestion() {
     if (autoSkipTimeout) clearTimeout(autoSkipTimeout);
     updateNavigationButtons();
+
+    // 正解カードを収納し、ボタンテキストを初期化
     document.getElementById('answer-card').style.display = 'none';
+    document.getElementById('btn-ans').innerText = "正解を表示";
+
     document.getElementById('btn-ans').disabled = true;
     document.getElementById('btn-toggle').disabled = true;
     document.getElementById('seek-bar').disabled = true;
@@ -633,8 +636,19 @@
     }
   }
 
+  // 正解カードの開閉トグル関数
   function showAnswer() {
     if (currentIndex < 0 || currentIndex >= quizData.length) return;
+
+    const answerCard = document.getElementById('answer-card');
+    const btnAns = document.getElementById('btn-ans');
+
+    if (answerCard.style.display === 'block') {
+      answerCard.style.display = 'none';
+      btnAns.innerText = "正解を表示";
+      return;
+    }
+
     const current = quizData[currentIndex];
     
     document.getElementById('ans-title').innerText = current.videoTitle || '';
@@ -663,7 +677,8 @@
     document.getElementById('comment-save-status').innerText = "";
     document.getElementById('disable-status').innerText = "";
     
-    document.getElementById('answer-card').style.display = 'block';
+    answerCard.style.display = 'block';
+    btnAns.innerText = "正解を隠す";
   }
 
   function applyVideoIdChange() {
@@ -738,7 +753,6 @@
     });
   }
 
-  // 手動で曲を無効化（A列をfalseに変更）する処理
   function disableCurrentSong() {
     if (currentIndex < 0 || currentIndex >= quizData.length) return;
     const current = quizData[currentIndex];
@@ -763,13 +777,11 @@
       if (data.status === "success") {
         statusEl.innerText = "無効化しました（DB非表示）";
         
-        // キャッシュおよび出題リストから除外
         if (dataCache[current.sheetName]) {
           dataCache[current.sheetName] = dataCache[current.sheetName].filter(item => item.rowIndex !== current.rowIndex);
         }
         quizData.splice(currentIndex, 1);
         
-        // リストを更新し、そのまま次の曲へ移行
         renderSongList();
         setTimeout(() => {
           if (quizData.length > 0) {
@@ -778,6 +790,7 @@
           } else {
             document.getElementById('status').innerText = "出題可能な曲がなくなりました。";
             document.getElementById('answer-card').style.display = 'none';
+            document.getElementById('btn-ans').innerText = "正解を表示";
           }
         }, 1000);
       } else {
