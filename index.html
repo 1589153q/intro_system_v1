@@ -235,6 +235,12 @@
       </div>
       <span id="comment-save-status" style="font-size: 12px; color: green;"></span>
     </div>
+
+    <!-- 新設：データ無効化ボタン -->
+    <div style="margin-top: 15px; text-align: right; border-top: 1px solid #ddd; padding-top: 10px;">
+      <button onclick="disableCurrentSong()" style="font-size: 12px; background-color: #dc3545;">🚫 この曲を無効化（DB非表示）</button>
+      <span id="disable-status" style="font-size: 12px; color: red; margin-left: 5px;"></span>
+    </div>
   </div>
 </div>
 
@@ -243,8 +249,7 @@
   const GAS_URL = "https://script.google.com/macros/s/AKfycby-lYg8SxOmSTuRNi86ofT5YzoCiAi2OIHkoYqT_hlX4cVeNe5FqO9wNGRpzQJkC0k/exec"; 
   const COMMENT_PASSWORD = "1234";            
 
-  // キャッシュおよび出題データ管理
-  const dataCache = {}; // { sheetName: [songObject, ...] }
+  const dataCache = {};
   let availableSheetNames = [];
   let quizData = [];
   let currentIndex = -1;
@@ -253,6 +258,7 @@
   let actualStartSec = 0;
   let seekTimer = null;
   let isUserSeeking = false;
+  let autoSkipTimeout = null;
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -260,10 +266,23 @@
       width: '640',
       host: 'https://www.youtube.com',
       playerVars: { 'playsinline': 1, 'controls': 0, 'origin': window.location.origin },
-      events: { 'onStateChange': onPlayerStateChange }
+      events: { 
+        'onStateChange': onPlayerStateChange,
+        'onError': onPlayerError // 自動スキップ用エラーハンドラ
+      }
     });
-    // 起動時はシート名メタデータのみ取得（曲データは取得しない）
     fetchSheetMetadata();
+  }
+
+  // YouTube読み込みエラー発生時の自動スキップ処理
+  function onPlayerError(event) {
+    console.warn("YouTube Player Error Code:", event.data);
+    document.getElementById('status').innerText = `⚠️ 動画の再生エラー (Error: ${event.data})。自動で次の曲へスキップします...`;
+    
+    if (autoSkipTimeout) clearTimeout(autoSkipTimeout);
+    autoSkipTimeout = setTimeout(() => {
+      nextQuestion();
+    }, 1500);
   }
 
   function toggleVideoVisibility() {
@@ -350,7 +369,6 @@
     isUserSeeking = false;
   }
 
-  // 1. 初回：シート名一覧のみ取得
   function fetchSheetMetadata() {
     document.getElementById('status').innerText = "シート情報を取得中...";
     fetch(GAS_URL)
@@ -366,7 +384,6 @@
       });
   }
 
-  // ドロップダウンの開閉制御
   function toggleSheetDropdown(event) {
     event.stopPropagation();
     const content = document.getElementById('sheet-checkbox-list');
@@ -430,83 +447,77 @@
     }
   }
 
- // 2. 「フィルター適用」ボタン押下時：必要なデータのオンデマンド取得 & キャッシュ＆フィルタリング
-async function applyFilters() {
-  const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
-  let selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
+  async function applyFilters() {
+    const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
+    let selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
 
-  // 未選択の場合は「全シート」を対象とする
-  if (selectedSheets.length === 0) {
-    selectedSheets = [...availableSheetNames];
-  }
+    if (selectedSheets.length === 0) {
+      selectedSheets = [...availableSheetNames];
+    }
 
-  if (selectedSheets.length === 0) {
-    alert("選択可能なシートがありません。");
-    return;
-  }
-
-  // 未キャッシュのシートを特定 (uncachedSheets)
-  const uncachedSheets = selectedSheets.filter(name => !dataCache[name]);
-
-  if (uncachedSheets.length > 0) {
-    document.getElementById('status').innerText = `データ取得中 (${uncachedSheets.join(', ')})...`;
-    try {
-      const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
-      const res = await fetch(fetchUrl);
-      const resData = await res.json();
-
-      // 取得データをシートごとに分けてキャッシュへ格納
-      uncachedSheets.forEach(sName => { dataCache[sName] = []; });
-      if (resData.data && Array.isArray(resData.data)) {
-        resData.data.forEach(item => {
-          if (dataCache[item.sheetName]) {
-            dataCache[item.sheetName].push(item);
-          }
-        });
-      }
-    } catch (err) {
-      document.getElementById('status').innerText = "データの取得に失敗しました。";
-      console.error(err);
+    if (selectedSheets.length === 0) {
+      alert("選択可能なシートがありません。");
       return;
     }
-  }
 
-  // キャッシュ済みの対象シートデータを取り出して統合
-  let combinedData = [];
-  selectedSheets.forEach(sName => {
-    if (dataCache[sName]) {
-      combinedData = combinedData.concat(dataCache[sName]);
-    }
-  });
+    const uncachedSheets = selectedSheets.filter(name => !dataCache[name]);
 
-  // 条件フィルタリングの適用
-  const tagInput = document.getElementById('f-tag');
-  const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
+    if (uncachedSheets.length > 0) {
+      document.getElementById('status').innerText = `データ取得中 (${uncachedSheets.join(', ')})...`;
+      try {
+        const fetchUrl = `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
+        const res = await fetch(fetchUrl);
+        const resData = await res.json();
 
-  const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
-  const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
-  const dMin = document.getElementById('f-date-min')?.value;
-  const dMax = document.getElementById('f-date-max')?.value;
-
-  quizData = combinedData.filter(item => {
-    if (tagKeyword) {
-      const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
-      if (!itemTags.toLowerCase().includes(tagKeyword)) {
-        return false;
+        uncachedSheets.forEach(sName => { dataCache[sName] = []; });
+        if (resData.data && Array.isArray(resData.data)) {
+          resData.data.forEach(item => {
+            if (dataCache[item.sheetName]) {
+              dataCache[item.sheetName].push(item);
+            }
+          });
+        }
+      } catch (err) {
+        document.getElementById('status').innerText = "データの取得に失敗しました。";
+        console.error(err);
+        return;
       }
     }
-    if (item.views < vMin || item.views > vMax) return false;
-    if (dMin && item.postDate < dMin) return false;
-    if (dMax && item.postDate > dMax) return false;
 
-    return true;
-  });
+    let combinedData = [];
+    selectedSheets.forEach(sName => {
+      if (dataCache[sName]) {
+        combinedData = combinedData.concat(dataCache[sName]);
+      }
+    });
 
-  currentIndex = -1;
-  document.getElementById('status').innerText = `該当 ${quizData.length} / 取得済み ${combinedData.length} 問`;
-  updateNavigationButtons();
-  renderSongList();
-}
+    const tagInput = document.getElementById('f-tag');
+    const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
+
+    const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
+    const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
+    const dMin = document.getElementById('f-date-min')?.value;
+    const dMax = document.getElementById('f-date-max')?.value;
+
+    quizData = combinedData.filter(item => {
+      if (tagKeyword) {
+        const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
+        if (!itemTags.toLowerCase().includes(tagKeyword)) {
+          return false;
+        }
+      }
+      if (item.views < vMin || item.views > vMax) return false;
+      if (dMin && item.postDate < dMin) return false;
+      if (dMax && item.postDate > dMax) return false;
+
+      return true;
+    });
+
+    currentIndex = -1;
+    document.getElementById('status').innerText = `該当 ${quizData.length} / 取得済み ${combinedData.length} 問`;
+    updateNavigationButtons();
+    renderSongList();
+  }
 
   function resetFilters() {
     const checkboxes = document.querySelectorAll('input[name="selected-sheets"]');
@@ -563,6 +574,7 @@ async function applyFilters() {
   }
 
   function loadCurrentQuestion() {
+    if (autoSkipTimeout) clearTimeout(autoSkipTimeout);
     updateNavigationButtons();
     document.getElementById('answer-card').style.display = 'none';
     document.getElementById('btn-ans').disabled = true;
@@ -649,6 +661,7 @@ async function applyFilters() {
     document.getElementById('video-save-status').innerText = "";
     document.getElementById('sec-save-status').innerText = "";
     document.getElementById('comment-save-status').innerText = "";
+    document.getElementById('disable-status').innerText = "";
     
     document.getElementById('answer-card').style.display = 'block';
   }
@@ -722,6 +735,58 @@ async function applyFilters() {
         current.comment = newComment;
         statusEl.innerText = "保存しました！";
       } else { statusEl.innerText = "保存失敗"; }
+    });
+  }
+
+  // 手動で曲を無効化（A列をfalseに変更）する処理
+  function disableCurrentSong() {
+    if (currentIndex < 0 || currentIndex >= quizData.length) return;
+    const current = quizData[currentIndex];
+    const statusEl = document.getElementById('disable-status');
+
+    if (!confirm(`「${current.videoTitle}」をデータベース上で非表示（無効化）にしますか？`)) {
+      return;
+    }
+
+    statusEl.innerText = "無効化中...";
+
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "disableRow",
+        sheetName: current.sheetName,
+        rowIndex: current.rowIndex
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "success") {
+        statusEl.innerText = "無効化しました（DB非表示）";
+        
+        // キャッシュおよび出題リストから除外
+        if (dataCache[current.sheetName]) {
+          dataCache[current.sheetName] = dataCache[current.sheetName].filter(item => item.rowIndex !== current.rowIndex);
+        }
+        quizData.splice(currentIndex, 1);
+        
+        // リストを更新し、そのまま次の曲へ移行
+        renderSongList();
+        setTimeout(() => {
+          if (quizData.length > 0) {
+            if (currentIndex >= quizData.length) currentIndex = quizData.length - 1;
+            loadCurrentQuestion();
+          } else {
+            document.getElementById('status').innerText = "出題可能な曲がなくなりました。";
+            document.getElementById('answer-card').style.display = 'none';
+          }
+        }, 1000);
+      } else {
+        statusEl.innerText = "無効化失敗";
+      }
+    })
+    .catch(err => {
+      statusEl.innerText = "通信エラー";
+      console.error(err);
     });
   }
 
