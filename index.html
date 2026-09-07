@@ -186,10 +186,21 @@
     <!-- 2. YouTube再生リストパネル -->
     <div id="playlist-panel" class="tab-panel">
       <strong>▶ YouTube再生リストから出題・DB追加</strong>
-      <div style="margin-top:8px;">
-        再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
-        <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-        <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+      <div style="margin-top:8px; display: flex; flex-direction: column; gap: 8px;">
+        <div>
+          再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
+        </div>
+        <div>
+          ジャンルタグ: 
+          <input type="text" id="playlist-tag-input" list="tag-suggestions" placeholder="例: アニソン, J-POP (選択または直接入力)" style="width: 280px;">
+          <datalist id="tag-suggestions">
+            <!-- 既存のタグ候補が動的に挿入されます -->
+          </datalist>
+        </div>
+        <div>
+          <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
+          <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+        </div>
       </div>
       <div style="margin-top: 5px;">
         <span id="playlist-status" style="font-size:12px; color:blue;"></span>
@@ -269,6 +280,7 @@
 
   const dataCache = {};
   let availableSheetNames = [];
+  let existingTags = new Set(); // 既存のタグ保持用
   let quizData = [];
   let currentIndex = -1;
   let player;
@@ -309,13 +321,11 @@
     else wrapper.classList.add('hide-player');
   }
 
-  // 設定コンテナ全体の表示切替
   function toggleSettingsBox() {
     const el = document.getElementById('settings-container');
     el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
   }
 
-  // タブ切り替え処理
   function switchTab(panelId, btnEl) {
     const panels = document.querySelectorAll('.tab-panel');
     panels.forEach(p => p.classList.remove('active'));
@@ -467,6 +477,21 @@
     }
   }
 
+  // 既存タグ一覧を datalist へ登録する関数
+  function updateTagSuggestions() {
+    const datalist = document.getElementById('tag-suggestions');
+    if (!datalist) return;
+    datalist.innerHTML = '';
+    
+    existingTags.forEach(tag => {
+      if (tag) {
+        const option = document.createElement('option');
+        option.value = tag;
+        datalist.appendChild(option);
+      }
+    });
+  }
+
   async function applyFilters() {
     const checkedBoxes = document.querySelectorAll('input[name="selected-sheets"]:checked');
     let selectedSheets = Array.from(checkedBoxes).map(cb => cb.value);
@@ -495,8 +520,15 @@
             if (dataCache[item.sheetName]) {
               dataCache[item.sheetName].push(item);
             }
+            // タグを収集して一意リスト化
+            if (Array.isArray(item.tags)) {
+              item.tags.forEach(t => existingTags.add(t));
+            } else if (item.tags) {
+              existingTags.add(item.tags);
+            }
           });
         }
+        updateTagSuggestions(); // datalist の候補を更新
       } catch (err) {
         document.getElementById('status').innerText = "データの取得に失敗しました。";
         console.error(err);
@@ -768,7 +800,7 @@
       if(data.status === "success") {
         current.comment = newComment;
         statusEl.innerText = "保存しました！";
-      } else { statusEl.innerText = "保存しました！"; }
+      } else { statusEl.innerText = "保存失敗"; }
     });
   }
 
@@ -822,15 +854,23 @@
     });
   }
 
+  // YouTube再生リストの未登録動画をDBへ書き込み保存（ジャンルタグ対応）
   function savePlaylistToDB() {
     const playlistId = document.getElementById('playlist-id-input').value.trim();
+    const genreTags = document.getElementById('playlist-tag-input').value.trim();
     const statusEl = document.getElementById('playlist-status');
+    
     if (!playlistId) { alert("再生リストIDを入力してください。"); return; }
 
     statusEl.innerText = "既存DBと照合して保存中...";
     fetch(GAS_URL, {
       method: "POST",
-      body: JSON.stringify({ action: "importPlaylist", playlistId: playlistId, targetSheet: "General" })
+      body: JSON.stringify({ 
+        action: "importPlaylist", 
+        playlistId: playlistId, 
+        targetSheet: "General",
+        genreTags: genreTags // 入力されたジャンルタグを送信
+      })
     })
     .then(res => res.json())
     .then(data => {
