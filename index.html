@@ -838,14 +838,22 @@
     applyFilters();
   }
 
-  // --- YouTube再生リストから直接読み込んで出題する関数 ---
+  // --- YouTube再生リストから直接読み込んで出題する関数（補正版） ---
   function loadFromPlaylistDirect() {
-    const playlistId = document.getElementById('playlist-id-input').value.trim();
+    let playlistId = document.getElementById('playlist-id-input').value.trim();
     const statusEl = document.getElementById('playlist-status');
 
     if (!playlistId) {
-      alert("再生リストIDを入力してください。");
+      alert("再生リストIDまたはURLを入力してください。");
       return;
+    }
+
+    // URLが入力された場合に list= パラメータからIDを抽出し補正
+    if (playlistId.includes("list=")) {
+      const match = playlistId.match(/[?&]list=([^&]+)/);
+      if (match && match[1]) {
+        playlistId = match[1];
+      }
     }
 
     statusEl.innerText = "再生リストの情報を取得中...";
@@ -861,15 +869,14 @@
           updateNavigationButtons();
           renderSongList();
         } else {
-          statusEl.innerText = "再生リストの取得に失敗したか、動画が含まれていません。";
+          statusEl.innerText = "再生リストの取得に失敗しました（公開設定やIDをご確認ください）。";
         }
       })
       .catch(err => {
-        statusEl.innerText = "エラーが発生しました。";
+        statusEl.innerText = "通信エラーが発生しました。";
         console.error(err);
       });
   }
-
   function shuffleQuestions() {
     for (let i = quizData.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
