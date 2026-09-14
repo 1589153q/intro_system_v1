@@ -18,8 +18,15 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
-    .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; }
-    .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
+    /* フィルターグリッドのレイアウト調整 */
+    .filter-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; }
+    .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .filter-label { font-weight: bold; min-width: 90px; }
+    .range-inputs { display: flex; align-items: center; gap: 5px; flex: 1; }
+    .range-inputs input { padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    .range-inputs input[type="number"] { width: 90px; }
+    .range-inputs input[type="date"] { width: 130px; }
+    .filter-grid input[type="text"] { flex: 1; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
     
     button { font-size: 14px; padding: 8px 14px; margin: 3px; cursor: pointer; border: none; border-radius: 6px; background: #007bff; color: white; transition: 0.2s; }
     button:hover { background: #0056b3; }
@@ -47,62 +54,13 @@
     #song-list-container ol { padding-left: 20px; margin: 0; font-size: 13px; }
     
     /* 複数選択ドロップダウンのスタイル */
-    .multiselect-dropdown {
-      position: relative;
-      display: inline-block;
-      min-width: 200px;
-    }
-
-    .select-btn {
-      width: 100%;
-      padding: 6px 10px;
-      background-color: #fff;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      text-align: left;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: #333;
-    }
-
-    .dropdown-content {
-      display: none;
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      background-color: #fff;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      max-height: 200px;
-      overflow-y: auto;
-      z-index: 1000;
-      padding: 6px;
-    }
-
-    .dropdown-content.show {
-      display: block;
-    }
-
-    .dropdown-item {
-      display: flex;
-      align-items: center;
-      padding: 4px 6px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .dropdown-item:hover {
-      background-color: #f0f0f0;
-    }
-
-    .dropdown-item input[type="checkbox"] {
-      margin-right: 8px;
-      cursor: pointer;
-    }
+    .multiselect-dropdown { position: relative; display: inline-block; min-width: 200px; }
+    .select-btn { width: 100%; padding: 6px 10px; background-color: #fff; border: 1px solid #ccc; border-radius: 4px; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; color: #333; }
+    .dropdown-content { display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; z-index: 1000; padding: 6px; }
+    .dropdown-content.show { display: block; }
+    .dropdown-item { display: flex; align-items: center; padding: 4px 6px; cursor: pointer; user-select: none; }
+    .dropdown-item:hover { background-color: #f0f0f0; }
+    .dropdown-item input[type="checkbox"] { margin-right: 8px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -156,7 +114,8 @@
     <!-- 1. フィルタリングパネル -->
     <div id="filter-panel" class="tab-panel active">
       <div class="filter-grid">
-        <div>対象シート: 
+        <div class="filter-row">
+          <span class="filter-label">対象シート:</span>
           <div class="multiselect-dropdown" id="sheet-multiselect">
             <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
               <span id="select-btn-text">対象シートを選択</span>
@@ -168,17 +127,46 @@
                 <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
               </div>
               <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
-              <div id="sheet-options-container">
-                <!-- GASから取得したシート名のチェックボックスが自動挿入されます -->
-              </div>
+              <div id="sheet-options-container"></div>
             </div>
           </div>
         </div>
-        <div>タグ検索: <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲"></div>
-        <div>再生数: <input type="number" id="f-views-min" placeholder="下限"> ～ <input type="number" id="f-views-max" placeholder="上限"></div>
-        <div>投稿日: <input type="date" id="f-date-min"> ～ <input type="date" id="f-date-max"></div>
+
+        <div class="filter-row">
+          <span class="filter-label">タグ検索:</span>
+          <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲">
+        </div>
+
+        <div class="filter-row">
+          <span class="filter-label">最高順位:</span>
+          <div class="range-inputs">
+            <input type="number" id="f-rank-min" placeholder="1 (位)" min="1">
+            <span>～</span>
+            <input type="number" id="f-rank-max" placeholder="10 (位)" min="1">
+            <span style="font-size: 11px; color: #666; margin-left: 5px;">(※ #1, #2 などのタグ順位)</span>
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <span class="filter-label">再生数:</span>
+          <div class="range-inputs">
+            <input type="number" id="f-views-min" placeholder="下限">
+            <span>～</span>
+            <input type="number" id="f-views-max" placeholder="上限">
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <span class="filter-label">投稿日:</span>
+          <div class="range-inputs">
+            <input type="date" id="f-date-min">
+            <span>～</span>
+            <input type="date" id="f-date-max">
+          </div>
+        </div>
       </div>
-      <div style="margin-top: 10px; text-align: right;">
+
+      <div style="margin-top: 12px; text-align: right;">
         <button onclick="applyFilters()" style="font-size: 12px; font-weight: bold; background-color: #28a745;">フィルター適用（データ取得）</button>
         <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
       </div>
@@ -775,12 +763,16 @@
     const tagInput = document.getElementById('f-tag');
     const tagKeyword = tagInput ? tagInput.value.trim().toLowerCase() : '';
 
+    const rMin = Number(document.getElementById('f-rank-min')?.value) || 0;
+    const rMax = Number(document.getElementById('f-rank-max')?.value) || Infinity;
+
     const vMin = Number(document.getElementById('f-views-min')?.value) || 0;
     const vMax = Number(document.getElementById('f-views-max')?.value) || Infinity;
     const dMin = document.getElementById('f-date-min')?.value;
     const dMax = document.getElementById('f-date-max')?.value;
 
     quizData = combinedData.filter(item => {
+      // 1. フリーワードタグ判定
       if (tagKeyword) {
         const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
         if (!itemTags.toLowerCase().includes(tagKeyword)) {
@@ -788,9 +780,36 @@
         }
       }
 
+      // 2. 順位（#1, #2 等）判定
+      if (rMin > 0 || rMax < Infinity) {
+        const itemTags = Array.isArray(item.tags) ? item.tags : (item.tags ? [item.tags] : []);
+        let extractedRanks = [];
+
+        // タグ（またはP列文字列）の中から #数字 または 数値単体を抽出
+        itemTags.forEach(t => {
+          if (typeof t === 'string') {
+            const matches = t.match(/#(\d+)/g);
+            if (matches) {
+              matches.forEach(m => extractedRanks.push(Number(m.replace('#', ''))));
+            }
+          } else if (typeof t === 'number') {
+            extractedRanks.push(t);
+          }
+        });
+
+        // 最良（最高）順位を取得（存在しない場合は Infinity）
+        const bestRank = extractedRanks.length > 0 ? Math.min(...extractedRanks) : Infinity;
+
+        if (bestRank < rMin || bestRank > rMax) {
+          return false;
+        }
+      }
+
+      // 3. 再生数判定
       const views = (item.views !== undefined && item.views !== null && item.views !== "") ? Number(item.views) : 0;
       if (views < vMin || views > vMax) return false;
 
+      // 4. 投稿日判定
       const postDate = item.postDate || "";
       if (dMin && postDate && postDate < dMin) return false;
       if (dMax && postDate && postDate > dMax) return false;
@@ -815,6 +834,8 @@
     };
 
     resetValue('f-tag');
+    resetValue('f-rank-min');
+    resetValue('f-rank-max');
     resetValue('f-views-min');
     resetValue('f-views-max');
     resetValue('f-date-min');
