@@ -841,6 +841,7 @@
   // --- YouTube再生リストから直接読み込んで出題する関数（補正版） ---
   function loadFromPlaylistDirect() {
     let playlistId = document.getElementById('playlist-id-input').value.trim();
+    const genreTags = document.getElementById('playlist-tag-input').value.trim();
     const statusEl = document.getElementById('playlist-status');
 
     if (!playlistId) {
@@ -858,24 +859,36 @@
 
     statusEl.innerText = "再生リストの情報を取得中...";
 
-    fetch(`${GAS_URL}?action=fetchPlaylistItems&playlistId=${encodeURIComponent(playlistId)}`)
-      .then(res => res.json())
-      .then(resData => {
-        if (resData.status === "success" && Array.isArray(resData.data) && resData.data.length > 0) {
-          quizData = resData.data;
-          currentIndex = -1;
-          statusEl.innerText = `再生リストから ${quizData.length} 件を読み込みました！`;
-          document.getElementById('status').innerText = `【再生リスト出題】 全 ${quizData.length} 問`;
-          updateNavigationButtons();
-          renderSongList();
-        } else {
-          statusEl.innerText = "再生リストの取得に失敗しました（公開設定やIDをご確認ください）。";
-        }
+    fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "syncPlaylistAndGetQuiz",
+        playlistId: playlistId,
+        genreTags: genreTags
       })
-      .catch(err => {
-        statusEl.innerText = "通信エラーが発生しました。";
-        console.error(err);
-      });
+    })
+    .then(res => res.json())
+    .then(resData => {
+      if (resData.status === "success" && Array.isArray(resData.data) && resData.data.length > 0) {
+        quizData = resData.data;
+        currentIndex = -1;
+        statusEl.innerText = `同期完了！ ${quizData.length} 件の動画を出題対象として読み込みました。`;
+        document.getElementById('status').innerText = `【Generalシート(再生リスト同期)】 全 ${quizData.length} 問 準備完了！`;
+        
+        // 取得した出題リストでそのままクイズ開始可能にする
+        updateNavigationButtons();
+        renderSongList();
+        
+        // キャッシュクリア（次回フィルター適用時用）
+        delete dataCache["General"];
+      } else {
+        statusEl.innerText = "同期に失敗したか、対象の動画が見つかりませんでした。";
+      }
+    })
+    .catch(err => {
+      statusEl.innerText = "通信エラーが発生しました。";
+      console.error(err);
+    });
   }
   function shuffleQuestions() {
     for (let i = quizData.length - 1; i > 0; i--) {
