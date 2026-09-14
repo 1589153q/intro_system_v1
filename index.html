@@ -616,38 +616,64 @@
     isUserSeeking = false;
   }
 
+// --- プルダウン開閉関連の修正コード ---
+
+  // ページの初期化完了時に安全にイベントを準備
+  document.addEventListener('DOMContentLoaded', () => {
+    updateSheetSelectOptions([]);
+  });
+
+  function toggleSheetDropdown(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const content = document.getElementById('sheet-checkbox-list');
+    if (content) {
+      content.classList.toggle('show');
+    }
+  }
+
+  // ドロップダウンの外側をクリックした時に閉じる処理
+  window.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('sheet-multiselect');
+    const content = document.getElementById('sheet-checkbox-list');
+    if (content && content.classList.contains('show')) {
+      if (dropdown && !dropdown.contains(e.target)) {
+        content.classList.remove('show');
+      }
+    }
+  });
+
   function fetchSheetMetadata() {
-    document.getElementById('status').innerText = "シート情報を取得中...";
+    const statusEl = document.getElementById('status');
+    if (statusEl) statusEl.innerText = "シート情報を取得中...";
+
     fetch(GAS_URL)
       .then(res => res.json())
       .then(resData => {
         availableSheetNames = resData.sheetNames || [];
         updateSheetSelectOptions(availableSheetNames);
-        document.getElementById('status').innerText = "シート一覧を取得しました。選択して「フィルター適用」を押してください。";
+        if (statusEl) statusEl.innerText = "シート一覧を取得しました。選択して「フィルター適用」を押してください。";
       })
       .catch(err => {
-        document.getElementById('status').innerText = "シート情報の取得に失敗しました。";
-        console.error(err);
+        if (statusEl) statusEl.innerText = "シート情報の取得に失敗しました。";
+        console.error("fetchSheetMetadata Error:", err);
+        // エラー時もプルダウンが壊れないように空で更新
+        updateSheetSelectOptions([]);
       });
   }
-
-  function toggleSheetDropdown(event) {
-    event.stopPropagation();
-    const content = document.getElementById('sheet-checkbox-list');
-    content.classList.toggle('show');
-  }
-
-  window.addEventListener('click', function() {
-    const content = document.getElementById('sheet-checkbox-list');
-    if (content && content.classList.contains('show')) {
-      content.classList.remove('show');
-    }
-  });
 
   function updateSheetSelectOptions(sheetNames) {
     const container = document.getElementById('sheet-options-container');
     if (!container) return;
     container.innerHTML = '';
+
+    if (!sheetNames || sheetNames.length === 0) {
+      container.innerHTML = '<div style="padding: 6px; color: #888; font-size: 12px;">シートが見つかりません</div>';
+      updateSelectButtonText();
+      return;
+    }
 
     sheetNames.forEach(name => {
       const label = document.createElement('label');
