@@ -308,6 +308,10 @@
   let currentVolume = 100;
   let isMuted = false;
 
+  document.addEventListener('DOMContentLoaded', () => {
+    updateSheetSelectOptions([]);
+  });
+
   function isPopoutActive() {
     return popoutWindow && !popoutWindow.closed && popoutPlayer;
   }
@@ -326,14 +330,12 @@
     fetchSheetMetadata();
   }
 
-  // ポップアウト（子画面）ウィンドウを開く関数
   function openPopoutWindow() {
     if (popoutWindow && !popoutWindow.closed) {
       popoutWindow.focus();
       return;
     }
 
-    // 移行前のメイン画面の再生状態と経過秒数を保持
     let currentTime = 0;
     const wasPlaying = isPlaying;
 
@@ -390,35 +392,31 @@
         }
       });
 
-      // 子画面の準備完了時に「0.1秒再生 ➔ 停止 ➔ 元の秒数へシーク」を実行
       if (currentIndex >= 0 && currentIndex < quizData.length) {
         const current = quizData[currentIndex];
         popoutPlayer.loadVideoById({ videoId: current.youtubeId, startSeconds: currentTime });
         
         setTimeout(() => {
-          popoutPlayer.mute(); // 一旦ミュートにする
-          popoutPlayer.playVideo(); // 再生状態を確立するために発火
+          popoutPlayer.mute();
+          popoutPlayer.playVideo();
 
           setTimeout(() => {
             popoutPlayer.pauseVideo();
             popoutPlayer.seekTo(currentTime, true);
 
-            // 音量・ミュートの設定を適用
             if (!isMuted) popoutPlayer.unMute();
             popoutPlayer.setVolume(currentVolume);
 
-            // ポップアウト前から再生中だった場合のみ再生を再開
             if (wasPlaying) {
               popoutPlayer.playVideo();
             }
-          }, 100); // 0.1秒（100ms）再生
+          }, 100);
         }, 300);
       }
     };
 
     startPopoutCloseMonitor();
 
-    // 正解カード表示状態の同期
     const isAnswerShown = document.getElementById('answer-card').style.display === 'block';
     if (isAnswerShown && currentIndex >= 0 && currentIndex < quizData.length) {
       const current = quizData[currentIndex];
@@ -448,7 +446,6 @@
     }, 500);
   }
 
-  // ポップアウト終了時の状態引き継ぎ処理
   function onPopoutClosed() {
     let lastTime = 0;
     const wasPlaying = isPlaying;
@@ -477,7 +474,7 @@
           if (wasPlaying) {
             player.playVideo();
           }
-        }, 100); // 0.1秒（100ms）再生して一時停止
+        }, 100);
       }, 300);
     }
   }
@@ -616,35 +613,6 @@
     isUserSeeking = false;
   }
 
-// --- プルダウン開閉関連の修正コード ---
-
-  // ページの初期化完了時に安全にイベントを準備
-  document.addEventListener('DOMContentLoaded', () => {
-    updateSheetSelectOptions([]);
-  });
-
-  function toggleSheetDropdown(event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    const content = document.getElementById('sheet-checkbox-list');
-    if (content) {
-      content.classList.toggle('show');
-    }
-  }
-
-  // ドロップダウンの外側をクリックした時に閉じる処理
-  window.addEventListener('click', function(e) {
-    const dropdown = document.getElementById('sheet-multiselect');
-    const content = document.getElementById('sheet-checkbox-list');
-    if (content && content.classList.contains('show')) {
-      if (dropdown && !dropdown.contains(e.target)) {
-        content.classList.remove('show');
-      }
-    }
-  });
-
   function fetchSheetMetadata() {
     const statusEl = document.getElementById('status');
     if (statusEl) statusEl.innerText = "シート情報を取得中...";
@@ -658,11 +626,31 @@
       })
       .catch(err => {
         if (statusEl) statusEl.innerText = "シート情報の取得に失敗しました。";
-        console.error("fetchSheetMetadata Error:", err);
-        // エラー時もプルダウンが壊れないように空で更新
+        console.error(err);
         updateSheetSelectOptions([]);
       });
   }
+
+  function toggleSheetDropdown(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const content = document.getElementById('sheet-checkbox-list');
+    if (content) {
+      content.classList.toggle('show');
+    }
+  }
+
+  window.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('sheet-multiselect');
+    const content = document.getElementById('sheet-checkbox-list');
+    if (content && content.classList.contains('show')) {
+      if (dropdown && !dropdown.contains(e.target)) {
+        content.classList.remove('show');
+      }
+    }
+  });
 
   function updateSheetSelectOptions(sheetNames) {
     const container = document.getElementById('sheet-options-container');
@@ -793,28 +781,19 @@
     const dMax = document.getElementById('f-date-max')?.value;
 
     quizData = combinedData.filter(item => {
-  if (tagKeyword) {
-    const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
-    if (!itemTags.toLowerCase().includes(tagKeyword)) {
-      return false;
-    }
-  }
-
-  // 再生数が空欄・未定義の場合は 0 として扱う
-  const views = (item.views !== undefined && item.views !== null && item.views !== "") ? Number(item.views) : 0;
-  if (views < vMin || views > vMax) return false;
-
-  // 投稿日が空欄の場合は日付フィルターをパスさせる
-  const postDate = item.postDate || "";
-  if (dMin && postDate && postDate < dMin) return false;
-  if (dMax && postDate && postDate > dMax) return false;
-
-  return true;
-});
+      if (tagKeyword) {
+        const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
+        if (!itemTags.toLowerCase().includes(tagKeyword)) {
+          return false;
+        }
       }
-      if (item.views < vMin || item.views > vMax) return false;
-      if (dMin && item.postDate < dMin) return false;
-      if (dMax && item.postDate > dMax) return false;
+
+      const views = (item.views !== undefined && item.views !== null && item.views !== "") ? Number(item.views) : 0;
+      if (views < vMin || views > vMax) return false;
+
+      const postDate = item.postDate || "";
+      if (dMin && postDate && postDate < dMin) return false;
+      if (dMax && postDate && postDate > dMax) return false;
 
       return true;
     });
