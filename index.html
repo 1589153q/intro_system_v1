@@ -772,7 +772,6 @@
     const dMax = document.getElementById('f-date-max')?.value;
 
     quizData = combinedData.filter(item => {
-      // 1. フリーワードタグ判定
       if (tagKeyword) {
         const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
         if (!itemTags.toLowerCase().includes(tagKeyword)) {
@@ -780,12 +779,10 @@
         }
       }
 
-      // 2. 順位（#1, #2 等）判定
       if (rMin > 0 || rMax < Infinity) {
         const itemTags = Array.isArray(item.tags) ? item.tags : (item.tags ? [item.tags] : []);
         let extractedRanks = [];
 
-        // タグ（またはP列文字列）の中から #数字 または 数値単体を抽出
         itemTags.forEach(t => {
           if (typeof t === 'string') {
             const matches = t.match(/#(\d+)/g);
@@ -797,7 +794,6 @@
           }
         });
 
-        // 最良（最高）順位を取得（存在しない場合は Infinity）
         const bestRank = extractedRanks.length > 0 ? Math.min(...extractedRanks) : Infinity;
 
         if (bestRank < rMin || bestRank > rMax) {
@@ -805,11 +801,9 @@
         }
       }
 
-      // 3. 再生数判定
       const views = (item.views !== undefined && item.views !== null && item.views !== "") ? Number(item.views) : 0;
       if (views < vMin || views > vMax) return false;
 
-      // 4. 投稿日判定
       const postDate = item.postDate || "";
       if (dMin && postDate && postDate < dMin) return false;
       if (dMax && postDate && postDate > dMax) return false;
@@ -842,6 +836,38 @@
     resetValue('f-date-max');
 
     applyFilters();
+  }
+
+  // --- YouTube再生リストから直接読み込んで出題する関数 ---
+  function loadFromPlaylistDirect() {
+    const playlistId = document.getElementById('playlist-id-input').value.trim();
+    const statusEl = document.getElementById('playlist-status');
+
+    if (!playlistId) {
+      alert("再生リストIDを入力してください。");
+      return;
+    }
+
+    statusEl.innerText = "再生リストの情報を取得中...";
+
+    fetch(`${GAS_URL}?action=fetchPlaylistItems&playlistId=${encodeURIComponent(playlistId)}`)
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === "success" && Array.isArray(resData.data) && resData.data.length > 0) {
+          quizData = resData.data;
+          currentIndex = -1;
+          statusEl.innerText = `再生リストから ${quizData.length} 件を読み込みました！`;
+          document.getElementById('status').innerText = `【再生リスト出題】 全 ${quizData.length} 問`;
+          updateNavigationButtons();
+          renderSongList();
+        } else {
+          statusEl.innerText = "再生リストの取得に失敗したか、動画が含まれていません。";
+        }
+      })
+      .catch(err => {
+        statusEl.innerText = "エラーが発生しました。";
+        console.error(err);
+      });
   }
 
   function shuffleQuestions() {
