@@ -767,11 +767,24 @@
     const dMax = document.getElementById('f-date-max')?.value;
 
     quizData = combinedData.filter(item => {
-      if (tagKeyword) {
-        const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
-        if (!itemTags.toLowerCase().includes(tagKeyword)) {
-          return false;
-        }
+  if (tagKeyword) {
+    const itemTags = Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '');
+    if (!itemTags.toLowerCase().includes(tagKeyword)) {
+      return false;
+    }
+  }
+
+  // 再生数が空欄・未定義の場合は 0 として扱う
+  const views = (item.views !== undefined && item.views !== null && item.views !== "") ? Number(item.views) : 0;
+  if (views < vMin || views > vMax) return false;
+
+  // 投稿日が空欄の場合は日付フィルターをパスさせる
+  const postDate = item.postDate || "";
+  if (dMin && postDate && postDate < dMin) return false;
+  if (dMax && postDate && postDate > dMax) return false;
+
+  return true;
+});
       }
       if (item.views < vMin || item.views > vMax) return false;
       if (dMin && item.postDate < dMin) return false;
