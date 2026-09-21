@@ -79,10 +79,25 @@
   </div>
 
   <div id="player-container">
-    <div id="player-wrapper" class="hide-player">
-      <div id="player"></div>
-    </div>
+
+  <!-- YouTubeプレイヤー -->
+  <div id="player-wrapper" class="hide-player">
+    <div id="player"></div>
   </div>
+
+  <!-- NicoNicoプレイヤー -->
+  <div id="niconico-player-wrapper" class="hide-player">
+    <iframe
+      id="niconico-player"
+      src=""
+      width="640"
+      height="360"
+      allow="autoplay; fullscreen"
+      style="border:0;">
+    </iframe>
+  </div>
+
+</div>
 
   <div class="seekbar-container">
     <span id="time-current">0:00</span>
@@ -186,7 +201,7 @@
         </div>
         <div>
           <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-          <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+          <button onclick="()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
         </div>
       </div>
       <div style="margin-top: 5px;">
@@ -286,6 +301,19 @@
   let currentIndex = -1;
   let player;
   let popoutWindow = null;
+  // ============================================================
+  // NicoNico
+  // ============================================================
+
+  const NICO_ORIGIN = "https://embed.nicovideo.jp";
+  const NICONICO_PLAYER_ID = "niconico-test-player-step7-6-001";
+
+  let nicoIframe = null;
+  let nicoPlayerStatus = 0;
+  let currentSource = "youtube"; // "youtube" or "niconico"
+  let nicoCurrentVideoId = "";
+  let nicoLoadStartedAt = 0;
+  let nicoLoadCompleteAt = 0;
   let popoutPlayer = null;
   let popoutCheckInterval = null;
   let isPlaying = false;
@@ -299,6 +327,146 @@
   document.addEventListener('DOMContentLoaded', () => {
     updateSheetSelectOptions([]);
   });
+
+  window.addEventListener("message", function(event) {
+
+    if (event.origin !== NICO_ORIGIN) {
+      return;
+    }
+
+    let data = event.data;
+
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        return;
+      }
+    }
+
+    if (!data || typeof data !== "object") {
+      return;
+    }
+
+    if (
+      data.playerId !== undefined &&
+      data.playerId !== NICONICO_PLAYER_ID
+    ) {
+      return;
+    }
+
+    const eventName = data.eventName;
+
+    console.log("[NicoNico] message:", data);
+
+    // ----------------------------------------------------------
+    // loadComplete
+    // ----------------------------------------------------------
+
+    if (eventName === "loadComplete") {
+
+      nicoLoadCompleteAt = performance.now();
+
+      const elapsed =
+        nicoLoadCompleteAt - nicoLoadStartedAt;
+
+      console.log(
+        "[NicoNico] loadComplete: " +
+        nicoCurrentVideoId +
+        " / " +
+        Math.round(elapsed) +
+        "ms"
+      );
+
+      nicoPlayerStatus = 3;
+
+      updateNicoUIAfterLoad();
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // playerStatusChange
+    // ----------------------------------------------------------
+
+    if (eventName === "playerStatusChange") {
+
+      const status =
+        data.data &&
+        data.data.playerStatus;
+
+      nicoPlayerStatus = Number(status);
+
+      console.log(
+        "[NicoNico] playerStatus raw:",
+        status,
+        "type:",
+        typeof status
+      );
+
+      console.log(
+        "[NicoNico] playerStatus data:",
+        data.data
+      );
+
+      console.log(
+        "[NicoNico] status",
+        nicoPlayerStatus
+      );
+
+      if (nicoPlayerStatus === 1) {
+
+        // 再生準備中
+        isPlaying = false;
+
+        document.getElementById("btn-toggle").innerText =
+          "⏳ 再生準備中";
+
+        return;
+      }
+
+      if (nicoPlayerStatus === 2) {
+
+        // 再生中
+        isPlaying = true;
+
+        document.getElementById("btn-toggle").innerText =
+          "■ 停止 (一時停止)";
+
+        document.getElementById("btn-toggle")
+          .classList.add("playing");
+
+        return;
+      }
+
+      if (nicoPlayerStatus === 3) {
+
+        // 停止 / 一時停止
+        isPlaying = false;
+
+        document.getElementById("btn-toggle").innerText =
+          "▶ 再生";
+
+        document.getElementById("btn-toggle")
+          .classList.remove("playing");
+
+        return;
+      }
+
+      return;
+    }
+  });
+
+  function createNicoUrl(videoId) {
+    return (
+      NICO_ORIGIN +
+      "/watch/" +
+      encodeURIComponent(videoId) +
+      "?jsapi=1" +
+      "&playerId=" +
+      encodeURIComponent(NICONICO_PLAYER_ID)
+    );
+  }
 
   function isPopoutActive() {
     return popoutWindow && !popoutWindow.closed && popoutPlayer;
@@ -502,16 +670,64 @@
   }
 
   function syncVideoVisibility() {
-    const isChecked = document.getElementById('video-toggle').checked;
-    const wrapper = document.getElementById('player-wrapper');
-    if (isChecked) wrapper.classList.remove('hide-player');
-    else wrapper.classList.add('hide-player');
 
-    if (popoutWindow && !popoutWindow.closed) {
-      const popoutWrapper = popoutWindow.document.getElementById('popout-player-wrapper');
+    const isChecked =
+      document.getElementById("video-toggle").checked;
+
+    const youtubeWrapper =
+      document.getElementById("player-wrapper");
+
+    const nicoWrapper =
+      document.getElementById("niconico-player-wrapper");
+
+    if (currentSource === "niconico") {
+
+      if (youtubeWrapper) {
+        youtubeWrapper.classList.add("hide-player");
+      }
+
+      if (nicoWrapper) {
+        if (isChecked) {
+          nicoWrapper.classList.remove("hide-player");
+        } else {
+          nicoWrapper.classList.add("hide-player");
+        }
+      }
+
+    } else {
+
+      if (nicoWrapper) {
+        nicoWrapper.classList.add("hide-player");
+      }
+
+      if (youtubeWrapper) {
+        if (isChecked) {
+          youtubeWrapper.classList.remove("hide-player");
+        } else {
+          youtubeWrapper.classList.add("hide-player");
+        }
+      }
+    }
+
+    // YouTubeポップアウト
+    if (
+      popoutWindow &&
+      !popoutWindow.closed &&
+      currentSource === "youtube"
+    ) {
+
+      const popoutWrapper =
+        popoutWindow.document.getElementById(
+          "popout-player-wrapper"
+        );
+
       if (popoutWrapper) {
-        if (isChecked) popoutWrapper.classList.remove('hide-player');
-        else popoutWrapper.classList.add('hide-player');
+
+        if (isChecked) {
+          popoutWrapper.classList.remove("hide-player");
+        } else {
+          popoutWrapper.classList.add("hide-player");
+        }
       }
     }
   }
@@ -538,19 +754,43 @@
   }
 
   function onPlayerStateChange(event) {
-    const btn = document.getElementById('btn-toggle');
-    if (event.data === YT.PlayerState.PLAYING) {
-      isPlaying = true;
-      btn.innerText = "■ 停止 (一時停止)";
-      btn.classList.add('playing');
-      startSeekBarTimer();
-    } else {
-      isPlaying = false;
-      btn.innerText = "▶ 再生";
-      btn.classList.remove('playing');
-      stopSeekBarTimer();
-    }
+
+  // NicoNico出題中のYouTube状態は無視
+  if (currentSource !== "youtube") {
+    return;
   }
+
+  const btn =
+    document.getElementById("btn-toggle");
+
+  if (!btn) return;
+
+  if (
+    event.data ===
+    YT.PlayerState.PLAYING
+  ) {
+
+    isPlaying = true;
+
+    btn.innerText =
+      "■ 停止 (一時停止)";
+
+    btn.classList.add("playing");
+
+    startSeekBarTimer();
+
+  } else {
+
+    isPlaying = false;
+
+    btn.innerText =
+      "▶ 再生";
+
+    btn.classList.remove("playing");
+
+    stopSeekBarTimer();
+  }
+}
 
   function formatTime(seconds) {
     const sec = Math.floor(seconds || 0);
@@ -559,29 +799,93 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  function startSeekBarTimer() {
-    stopSeekBarTimer();
-    seekTimer = setInterval(updateSeekBarUI, 250);
+  function updateSeekBarUI() {
+
+  if (currentSource === "niconico") {
+    return;
   }
+
+  const activePlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
+
+  if (
+    !activePlayer ||
+    isUserSeeking ||
+    !activePlayer.getCurrentTime
+  ) {
+    return;
+  }
+
+  const current =
+    activePlayer.getCurrentTime() || 0;
+
+  const duration =
+    activePlayer.getDuration() || 0;
+
+  const seekBar =
+    document.getElementById("seek-bar");
+
+  seekBar.max = duration;
+  seekBar.value = current;
+
+  document.getElementById(
+    "time-current"
+  ).innerText =
+    formatTime(current);
+
+  document.getElementById(
+    "time-duration"
+  ).innerText =
+    formatTime(duration);
+}
 
   function stopSeekBarTimer() {
     if (seekTimer) clearInterval(seekTimer);
   }
 
   function updateSeekBarUI() {
-    const activePlayer = isPopoutActive() ? popoutPlayer : player;
-    if (!activePlayer || isUserSeeking || !activePlayer.getCurrentTime) return;
-    
-    const current = activePlayer.getCurrentTime() || 0;
-    const duration = activePlayer.getDuration() || 0;
-    
-    const seekBar = document.getElementById('seek-bar');
-    seekBar.max = duration;
-    seekBar.value = current;
 
-    document.getElementById('time-current').innerText = formatTime(current);
-    document.getElementById('time-duration').innerText = formatTime(duration);
+  if (currentSource === "niconico") {
+    return;
   }
+
+  const activePlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
+
+  if (
+    !activePlayer ||
+    isUserSeeking ||
+    !activePlayer.getCurrentTime
+  ) {
+    return;
+  }
+
+  const current =
+    activePlayer.getCurrentTime() || 0;
+
+  const duration =
+    activePlayer.getDuration() || 0;
+
+  const seekBar =
+    document.getElementById("seek-bar");
+
+  seekBar.max = duration;
+  seekBar.value = current;
+
+  document.getElementById(
+    "time-current"
+  ).innerText =
+    formatTime(current);
+
+  document.getElementById(
+    "time-duration"
+  ).innerText =
+    formatTime(duration);
+}
 
   function onSeekInput() {
     isUserSeeking = true;
@@ -926,80 +1230,319 @@
   }
 
   function loadCurrentQuestion() {
-    if (autoSkipTimeout) clearTimeout(autoSkipTimeout);
-    updateNavigationButtons();
 
-    document.getElementById('answer-card').style.display = 'none';
-    document.getElementById('btn-ans').innerText = "正解を表示";
+  if (autoSkipTimeout) {
+    clearTimeout(autoSkipTimeout);
+  }
 
-    if (popoutWindow && !popoutWindow.closed) {
-      const pInfo = popoutWindow.document.getElementById('popout-info');
-      if (pInfo) pInfo.style.display = 'none';
+  updateNavigationButtons();
+
+  document.getElementById("answer-card").style.display = "none";
+  document.getElementById("btn-ans").innerText = "正解を表示";
+
+  if (
+    popoutWindow &&
+    !popoutWindow.closed
+  ) {
+
+    const pInfo =
+      popoutWindow.document.getElementById(
+        "popout-info"
+      );
+
+    if (pInfo) {
+      pInfo.style.display = "none";
+    }
+  }
+
+  document.getElementById("btn-ans").disabled = true;
+  document.getElementById("btn-toggle").disabled = true;
+
+  document.getElementById("seek-bar").disabled = true;
+
+  isPlaying = false;
+
+  document.getElementById("btn-toggle").innerText =
+    "▶ 再生";
+
+  document.getElementById("btn-toggle")
+    .classList.remove("playing");
+
+  document.getElementById("status").innerText =
+    `第 ${currentIndex + 1} / ${quizData.length} 問 準備中...`;
+
+  const current = quizData[currentIndex];
+
+  // ==========================================================
+  // NicoNico判定
+  // ==========================================================
+
+  const isNicoNico =
+    current &&
+    (
+      current.niconicoId ||
+      current.niconicoUrl ||
+      current.sheetName === "VOCALOID_niconico"
+    );
+
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
+
+  if (isNicoNico) {
+
+    currentSource = "niconico";
+
+    console.log(
+      "[NicoNico] 出題:",
+      current.niconicoId
+    );
+
+    // YouTubeを停止
+    if (
+      player &&
+      player.pauseVideo
+    ) {
+      try {
+        player.pauseVideo();
+      } catch (e) {
+        console.warn(
+          "[YouTube] pause失敗:",
+          e
+        );
+      }
     }
 
-    document.getElementById('btn-ans').disabled = true;
-    document.getElementById('btn-toggle').disabled = true;
-    document.getElementById('seek-bar').disabled = true;
-    document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備中...`;
-    
-    const current = quizData[currentIndex];
-    const mode = document.querySelector('input[name="playMode"]:checked').value;
+    // ポップアウトYouTubeも停止
+    if (
+      isPopoutActive() &&
+      popoutPlayer &&
+      popoutPlayer.pauseVideo
+    ) {
+      try {
+        popoutPlayer.pauseVideo();
+      } catch (e) {
+        console.warn(
+          "[YouTube Popout] pause失敗:",
+          e
+        );
+      }
+    }
 
-    const targetPlayer = isPopoutActive() ? popoutPlayer : player;
+    syncVideoVisibility();
 
-    targetPlayer.mute();
-    targetPlayer.loadVideoById({ videoId: current.youtubeId });
+    const videoId =
+      current.niconicoId;
+
+    if (!videoId) {
+
+      document.getElementById("status").innerText =
+        "⚠️ NicoNico動画IDがありません。";
+
+      return;
+    }
+
+    loadNicoVideo(videoId);
+
+    return;
+  }
+
+  // ==========================================================
+  // YouTube
+  // ==========================================================
+
+  currentSource = "youtube";
+
+  syncVideoVisibility();
+
+  const mode =
+    document.querySelector(
+      'input[name="playMode"]:checked'
+    ).value;
+
+  const targetPlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
+
+  if (!targetPlayer) {
+
+    document.getElementById("status").innerText =
+      "YouTubeプレイヤーの準備が完了していません。";
+
+    return;
+  }
+
+  targetPlayer.mute();
+
+  targetPlayer.loadVideoById({
+    videoId: current.youtubeId
+  });
+
+  setTimeout(() => {
+
+    const duration =
+      targetPlayer.getDuration() || 180;
+
+    actualStartSec = 0;
+
+    if (mode === "customSec") {
+
+      actualStartSec =
+        current.customStartSec !== null
+          ? current.customStartSec
+          : 0;
+
+    } else if (mode === "fullRandom") {
+
+      const cutStartPercent =
+        Number(
+          document.getElementById(
+            "cut-start"
+          ).value
+        ) || 0;
+
+      const cutEndPercent =
+        Number(
+          document.getElementById(
+            "cut-end"
+          ).value
+        ) || 0;
+
+      const startBoundary =
+        duration *
+        (cutStartPercent / 100);
+
+      const endBoundary =
+        duration *
+        (1 - cutEndPercent / 100);
+
+      if (
+        endBoundary >
+        startBoundary
+      ) {
+
+        actualStartSec =
+          Math.floor(
+            startBoundary +
+            Math.random() *
+            (
+              endBoundary -
+              startBoundary
+            )
+          );
+
+      } else {
+
+        actualStartSec = 0;
+      }
+    }
+
+    targetPlayer.seekTo(
+      actualStartSec,
+      true
+    );
 
     setTimeout(() => {
-      const duration = targetPlayer.getDuration() || 180;
-      actualStartSec = 0;
 
-      if (mode === 'customSec') {
-        actualStartSec = current.customStartSec !== null ? current.customStartSec : 0;
-      } else if (mode === 'fullRandom') {
-        const cutStartPercent = Number(document.getElementById('cut-start').value) || 0;
-        const cutEndPercent = Number(document.getElementById('cut-end').value) || 0;
-        
-        const startBoundary = duration * (cutStartPercent / 100);
-        const endBoundary = duration * (1 - (cutEndPercent / 100));
-        
-        if (endBoundary > startBoundary) {
-          actualStartSec = Math.floor(startBoundary + Math.random() * (endBoundary - startBoundary));
-        } else {
-          actualStartSec = 0;
-        }
-      }
+      targetPlayer.pauseVideo();
 
-      targetPlayer.seekTo(actualStartSec, true);
-      
-      setTimeout(() => {
-        targetPlayer.pauseVideo();
-        targetPlayer.seekTo(actualStartSec, true);
+      targetPlayer.seekTo(
+        actualStartSec,
+        true
+      );
 
-        document.getElementById('status').innerText = `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
-        document.getElementById('btn-toggle').disabled = false;
-        document.getElementById('btn-ans').disabled = false;
-        document.getElementById('seek-bar').disabled = false;
-        updateSeekBarUI();
-      }, 500);
+      document.getElementById("status").innerText =
+        `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
 
-    }, 1000);
-  }
+      document.getElementById("btn-toggle").disabled =
+        false;
+
+      document.getElementById("btn-ans").disabled =
+        false;
+
+      document.getElementById("seek-bar").disabled =
+        false;
+
+      updateSeekBarUI();
+
+    }, 500);
+
+  }, 1000);
+}
 
   function togglePlay() {
-    const activePlayer = isPopoutActive() ? popoutPlayer : player;
-    if (!activePlayer) return;
 
-    if (isPlaying) {
-      if (activePlayer.pauseVideo) activePlayer.pauseVideo();
-    } else {
-      if (activePlayer.playVideo) {
-        if (!isMuted) activePlayer.unMute();
-        if (activePlayer.setVolume) activePlayer.setVolume(currentVolume);
-        activePlayer.playVideo();
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
+
+  if (currentSource === "niconico") {
+
+    console.log("[NicoNico] togglePlay");
+
+    if (!nicoIframe) {
+      console.warn(
+        "[NicoNico] iframeがありません"
+      );
+      return;
+    }
+
+    if (nicoPlayerStatus === 2) {
+
+      console.log("[NicoNico] pause");
+
+      isPlaying = false;
+
+      sendNicoPlayerCommand("pause");
+
+      return;
+    }
+
+    console.log("[NicoNico] play");
+
+    isPlaying = true;
+
+    sendNicoPlayerCommand("play");
+
+    return;
+  }
+
+  // ==========================================================
+  // YouTube
+  // ==========================================================
+
+  const activePlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
+
+  if (!activePlayer) return;
+
+  if (isPlaying) {
+
+    if (activePlayer.pauseVideo) {
+      activePlayer.pauseVideo();
+    }
+
+  } else {
+
+    if (activePlayer.playVideo) {
+
+      if (!isMuted) {
+        activePlayer.unMute();
       }
+
+      if (activePlayer.setVolume) {
+        activePlayer.setVolume(
+          currentVolume
+        );
+      }
+
+      activePlayer.playVideo();
     }
   }
+}
 
   function showAnswer() {
     if (currentIndex < 0 || currentIndex >= quizData.length) return;
@@ -1007,6 +1550,14 @@
     const answerCard = document.getElementById('answer-card');
     const btnAns = document.getElementById('btn-ans');
     const current = quizData[currentIndex];
+
+    const isNicoNico =
+      current &&
+      (
+        current.niconicoId ||
+        current.niconicoUrl ||
+        current.sheetName === "VOCALOID_niconico"
+      );
 
     if (answerCard.style.display === 'block') {
       answerCard.style.display = 'none';
@@ -1021,15 +1572,62 @@
 
     document.getElementById('ans-title').innerText = current.videoTitle || '';
     document.getElementById('ans-artist').innerText = current.artist || '';
-    document.getElementById('ans-channel').innerText = current.channelName || '';
-    document.getElementById('ans-date').innerText = current.postDate || '';
+    document.getElementById('ans-channel').innerText = isNicoNico
+      ? (current.uploaderName || '-')
+      : (current.channelName || '');
+    document.getElementById('ans-date').innerText = isNicoNico
+      ? (current.postDate || current.publishedAt || '')
+      : (current.postDate || '');
     document.getElementById('ans-views').innerText = (current.views || 0).toLocaleString();
     document.getElementById('ans-likes').innerText = (current.likes || 0).toLocaleString();
     document.getElementById('ans-snippet').innerText = current.description || '';
     
-    const selectEl = document.getElementById('video-id-select');
-    selectEl.innerHTML = "";
-    (current.videoIdList || [current.youtubeId]).forEach(vid => {
+    const videoIdArea =
+  document.getElementById("video-id-select")
+    ?.parentElement
+    ?.parentElement;
+
+if (videoIdArea) {
+  videoIdArea.style.display =
+    isNicoNico ? "none" : "block";
+}
+
+const selectEl =
+  document.getElementById(
+    "video-id-select"
+  );
+
+if (!isNicoNico) {
+
+  selectEl.innerHTML = "";
+
+  (
+    current.videoIdList ||
+    [current.youtubeId]
+  ).forEach(vid => {
+
+    const opt =
+      document.createElement("option");
+
+    opt.value = vid;
+
+    opt.innerText =
+      vid +
+      (
+        vid === current.youtubeId
+          ? " (現在の代表)"
+          : ""
+      );
+
+    if (
+      vid === current.youtubeId
+    ) {
+      opt.selected = true;
+    }
+
+    selectEl.appendChild(opt);
+  });
+}
       const opt = document.createElement('option');
       opt.value = vid;
       opt.innerText = vid + (vid === current.youtubeId ? " (現在の代表)" : "");
@@ -1181,20 +1779,28 @@
     });
   }
 
-  function savePlaylistToDB() {
-    const playlistId = document.getElementById('playlist-id-input').value.trim();
+function savePlaylistToDB() {
+    let playlistId = document.getElementById('playlist-id-input').value.trim();
     const genreTags = document.getElementById('playlist-tag-input').value.trim();
     const statusEl = document.getElementById('playlist-status');
     
-    if (!playlistId) { alert("再生リストIDを入力してください。"); return; }
+    if (!playlistId) { alert("再生リストIDまたはURLを入力してください。"); return; }
 
-    statusEl.innerText = "既存DBと照合して保存中...";
+    // URLが入力された場合に list= パラメータからIDを抽出
+    if (playlistId.includes("list=")) {
+      const match = playlistId.match(/[?&]list=([^&]+)/);
+      if (match && match[1]) {
+        playlistId = match[1];
+      }
+    }
+
+    statusEl.innerText = "既存DBと照合して未登録曲を保存中...";
+    
     fetch(GAS_URL, {
       method: "POST",
       body: JSON.stringify({ 
         action: "importPlaylist", 
         playlistId: playlistId, 
-        targetSheet: "General",
         genreTags: genreTags
       })
     })
@@ -1202,11 +1808,98 @@
     .then(data => {
       if (data.status === "success") {
         const res = data.result;
-        statusEl.innerText = `完了！ 新規追加: ${res.addedCount}件 / スキップ(重複): ${res.skippedCount}件`;
-        fetchSheetMetadata();
-      } else { statusEl.innerText = "保存失敗"; }
+        statusEl.innerText = `完了！ 新規追加: ${res.addedCount}件 / スキップ(重複済み): ${res.skippedCount}件`;
+        fetchSheetMetadata(); // シート一覧の更新
+      } else { 
+        statusEl.innerText = "保存に失敗しました。"; 
+      }
+    })
+    .catch(err => {
+      statusEl.innerText = "通信エラーが発生しました。";
+      console.error(err);
     });
   }
+
+  function sendNicoPlayerCommand(command) {
+    if (!nicoIframe || !nicoIframe.contentWindow) {
+      console.warn("[NicoNico] iframeがまだありません");
+      return;
+    }
+
+    console.log("[NicoNico] command:", command);
+
+    const message = {
+      eventName: command,
+      sourceConnectorType: 1,
+      playerId: NICONICO_PLAYER_ID
+    };
+
+    console.log("[NicoNico] postMessage:", message);
+
+    nicoIframe.contentWindow.postMessage(
+      message,
+      NICO_ORIGIN
+    );
+  }
+
+  function loadNicoVideo(videoId) {
+    if (!nicoIframe) {
+      nicoIframe = document.getElementById("niconico-player");
+    }
+
+    if (!nicoIframe) {
+      console.error("[NicoNico] iframeが見つかりません");
+      return;
+    }
+
+    nicoCurrentVideoId = videoId;
+    nicoPlayerStatus = 0;
+
+    nicoLoadStartedAt = performance.now();
+    nicoLoadCompleteAt = 0;
+
+    console.log("[NicoNico] 動画ロード開始");
+    console.log("[NicoNico] video=" + videoId);
+
+    nicoIframe.src = createNicoUrl(videoId);
+  }
+
+  function updateNicoUIAfterLoad() {
+
+    const btnToggle =
+      document.getElementById("btn-toggle");
+
+    const btnAns =
+      document.getElementById("btn-ans");
+
+    const seekBar =
+      document.getElementById("seek-bar");
+
+    if (!btnToggle) return;
+
+    btnToggle.disabled = false;
+
+    if (btnAns) {
+      btnAns.disabled = false;
+    }
+
+    // NicoNicoは現段階ではシークバーを使わない
+    if (seekBar) {
+      seekBar.disabled = true;
+      seekBar.value = 0;
+      seekBar.max = 100;
+    }
+
+  document.getElementById("time-current").innerText =
+    "0:00";
+
+  document.getElementById("time-duration").innerText =
+    "--:--";
+
+  document.getElementById("status").innerText =
+    `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+}
+
 </script>
 
 </body>
