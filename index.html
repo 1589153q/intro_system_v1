@@ -314,6 +314,8 @@
   let nicoCurrentVideoId = "";
   let nicoLoadStartedAt = 0;
   let nicoLoadCompleteAt = 0;
+  let nicoLoadToken = 0;
+  let nicoPendingPlay = false;
   let popoutPlayer = null;
   let popoutCheckInterval = null;
   let isPlaying = false;
@@ -365,25 +367,67 @@
 
     if (eventName === "loadComplete") {
 
-      nicoLoadCompleteAt = performance.now();
+  nicoLoadCompleteAt = performance.now();
 
-      const elapsed =
-        nicoLoadCompleteAt - nicoLoadStartedAt;
+  const elapsed =
+    nicoLoadCompleteAt - nicoLoadStartedAt;
+
+  console.log(
+    "[NicoNico] loadComplete: " +
+    nicoCurrentVideoId +
+    " / " +
+    Math.round(elapsed) +
+    "ms"
+  );
+
+  nicoPlayerStatus = 3;
+
+  updateNicoUIAfterLoad();
+
+  // ==========================================================
+  // ロード完了前に「再生」が押されていた場合
+  // ==========================================================
+
+  if (nicoPendingPlay) {
+
+    console.log(
+      "[NicoNico] 再生予約を実行"
+    );
+
+    nicoPendingPlay = false;
+
+    isPlaying = true;
+
+    // loadComplete直後は内部的に
+    // playerStatus=1（準備中）になる場合があるため、
+    // 次のイベントループでplayを送信する
+    setTimeout(() => {
+
+      // その間に別の動画へ移動していた場合は再生しない
+      if (currentSource !== "niconico") {
+        return;
+      }
+
+      if (
+        !nicoIframe ||
+        !nicoIframe.contentWindow
+      ) {
+        return;
+      }
 
       console.log(
-        "[NicoNico] loadComplete: " +
-        nicoCurrentVideoId +
-        " / " +
-        Math.round(elapsed) +
-        "ms"
+        "[NicoNico] reserved play"
       );
 
-      nicoPlayerStatus = 3;
+      sendNicoPlayerCommand(
+        "play"
+      );
 
-      updateNicoUIAfterLoad();
+    }, 0);
+  }
 
-      return;
-    }
+  return;
+}
 
     // ----------------------------------------------------------
     // playerStatusChange
@@ -1212,8 +1256,22 @@
   }
 
   function nextQuestion() {
-    if (currentIndex < quizData.length - 1) { currentIndex++; loadCurrentQuestion(); }
-  }
+
+ 　　 if (currentIndex >= quizData.length - 1) {
+  　　  return;
+ 　　 }
+
+ 　　 // ==========================================================
+　　  // 次の問題へ
+　　  // ==========================================================
+
+　　  currentIndex++;
+
+ 　　 // NicoNicoの「ロード中に再生予約」をリセット
+ 　　 nicoPendingPlay = false;
+
+　　  loadCurrentQuestion();
+　　}
 
   function prevQuestion() {
     if (currentIndex > 0) { currentIndex--; loadCurrentQuestion(); }
@@ -1474,33 +1532,76 @@
 
   if (currentSource === "niconico") {
 
-    console.log("[NicoNico] togglePlay");
+  console.log(
+    "[NicoNico] togglePlay"
+  );
 
-    if (!nicoIframe) {
-      console.warn(
-        "[NicoNico] iframeがありません"
-      );
-      return;
-    }
+  if (!nicoIframe) {
 
-    if (nicoPlayerStatus === 2) {
+    console.warn(
+      "[NicoNico] iframeがありません"
+    );
 
-      console.log("[NicoNico] pause");
+    return;
+  }
 
-      isPlaying = false;
+  // ==========================================================
+  // 現在再生中 → 一時停止
+  // ==========================================================
 
-      sendNicoPlayerCommand("pause");
+  if (nicoPlayerStatus === 2) {
 
-      return;
-    }
+    console.log(
+      "[NicoNico] pause"
+    );
 
-    console.log("[NicoNico] play");
+    isPlaying = false;
+    nicoPendingPlay = false;
+
+    sendNicoPlayerCommand(
+      "pause"
+    );
+
+    return;
+  }
+
+  // ==========================================================
+  // ロード完了前
+  // ==========================================================
+
+  if (
+    nicoPlayerStatus === 0 ||
+    nicoPlayerStatus === 1
+  ) {
+
+    console.log(
+      "[NicoNico] ロード中 → 再生予約"
+    );
+
+    nicoPendingPlay = true;
 
     isPlaying = true;
 
-    sendNicoPlayerCommand("play");
-
     return;
+  }
+
+  // ==========================================================
+  // 停止・一時停止状態
+  // ==========================================================
+
+  console.log(
+    "[NicoNico] play"
+  );
+
+  nicoPendingPlay = false;
+
+  isPlaying = true;
+
+  sendNicoPlayerCommand(
+    "play"
+  );
+
+  return;
   }
 
   // ==========================================================
@@ -1919,60 +2020,165 @@ function savePlaylistToDB() {
   }
 
   function loadNicoVideo(videoId) {
-    if (!nicoIframe) {
-      nicoIframe = document.getElementById("niconico-player");
-    }
 
-    if (!nicoIframe) {
-      console.error("[NicoNico] iframeが見つかりません");
-      return;
-    }
+　　  if (!nicoIframe) {
+ 　　   nicoIframe =
+  　　    document.getElementById("niconico-player");
+　　  }
 
-    nicoCurrentVideoId = videoId;
-    nicoPlayerStatus = 0;
+　　  if (!nicoIframe) {
+   　　 console.error(
+    　　  "[NicoNico] iframeが見つかりません"
+ 　　   );
+ 　　   return;
+　　  }
 
-    nicoLoadStartedAt = performance.now();
-    nicoLoadCompleteAt = 0;
+  // ==========================================================
+  // 新しいロード開始
+  // ==========================================================
 
-    console.log("[NicoNico] 動画ロード開始");
-    console.log("[NicoNico] video=" + videoId);
+　　  nicoLoadToken++;
 
-    nicoIframe.src = createNicoUrl(videoId);
+　　  const thisLoadToken =
+  　　  nicoLoadToken;
+
+  // 新しい動画なので再生予約を解除
+　　  nicoPendingPlay = false;
+
+　　  nicoCurrentVideoId =
+ 　　   videoId;
+
+　　  nicoPlayerStatus = 0;
+　　
+　　  nicoLoadStartedAt =
+ 　　   performance.now();
+
+ 　　 nicoLoadCompleteAt = 0;
+
+ 　　 console.log(
+ 　　   "[NicoNico] 動画ロード開始"
+　　  );
+
+ 　　 console.log(
+  　　  "[NicoNico] video=" +
+　　    videoId
+ 　　 );
+
+ 　　 console.log(
+ 　　   "[NicoNico] loadToken=" +
+ 　　   thisLoadToken
+　　  );
+
+  // ==========================================================
+  // UIをロード中状態にする
+  // ==========================================================
+
+　　  const btnToggle =
+ 　　   document.getElementById(
+ 　　     "btn-toggle"
+  　　  );
+
+　　  const btnAns =
+ 　　   document.getElementById(
+  　　    "btn-ans"
+ 　　   );
+
+　　  const seekBar =
+ 　　   document.getElementById(
+ 　　     "seek-bar"
+ 　　   );
+
+　　  if (btnToggle) {
+ 　　   btnToggle.disabled = true;
+ 　　   btnToggle.innerText =
+ 　　     "読み込み中...";
+　　  }
+
+　　  if (btnAns) {
+ 　　   btnAns.disabled = true;
+　　  }
+
+ 　　 if (seekBar) {
+  　　  seekBar.disabled = true;
+ 　　 }
+
+  // ==========================================================
+  // iframeに次の動画をロード
+  // ==========================================================
+
+ 　　 nicoIframe.src =
+   　　 createNicoUrl(videoId);
+　　}
+
+ function updateNicoUIAfterLoad() {
+
+  const btnToggle =
+    document.getElementById(
+      "btn-toggle"
+    );
+
+  const btnAns =
+    document.getElementById(
+      "btn-ans"
+    );
+
+  const seekBar =
+    document.getElementById(
+      "seek-bar"
+    );
+
+  if (!btnToggle) {
+    return;
   }
 
-  function updateNicoUIAfterLoad() {
+  // ==========================================================
+  // 再生ボタン
+  // ==========================================================
 
-    const btnToggle =
-      document.getElementById("btn-toggle");
+  btnToggle.disabled = false;
 
-    const btnAns =
-      document.getElementById("btn-ans");
+  btnToggle.innerText =
+    "▶ 再生";
 
-    const seekBar =
-      document.getElementById("seek-bar");
+  btnToggle.classList.remove(
+    "playing"
+  );
 
-    if (!btnToggle) return;
+  // ==========================================================
+  // 正解ボタン
+  // ==========================================================
 
-    btnToggle.disabled = false;
+  if (btnAns) {
+    btnAns.disabled = false;
+  }
 
-    if (btnAns) {
-      btnAns.disabled = false;
-    }
+  // ==========================================================
+  // シークバー
+  // ==========================================================
 
-    // NicoNicoは現段階ではシークバーを使わない
-    if (seekBar) {
-      seekBar.disabled = true;
-      seekBar.value = 0;
-      seekBar.max = 100;
-    }
+  if (seekBar) {
 
-  document.getElementById("time-current").innerText =
-    "0:00";
+    // NicoNicoでは現在シークを使用しない
+    seekBar.disabled = true;
+    seekBar.value = 0;
+    seekBar.max = 100;
+  }
 
-  document.getElementById("time-duration").innerText =
-    "--:--";
+  document.getElementById(
+    "time-current"
+  ).innerText = "0:00";
 
-  document.getElementById("status").innerText =
+  document.getElementById(
+    "time-duration"
+  ).innerText = "--:--";
+
+  // ==========================================================
+  // ステータス
+  // ==========================================================
+
+  document.getElementById(
+    "status"
+  ).innerText =
     `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
 }
 
