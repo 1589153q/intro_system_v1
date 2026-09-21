@@ -845,48 +845,6 @@
     if (seekTimer) clearInterval(seekTimer);
   }
 
-  function updateSeekBarUI() {
-
-  if (currentSource === "niconico") {
-    return;
-  }
-
-  const activePlayer =
-    isPopoutActive()
-      ? popoutPlayer
-      : player;
-
-  if (
-    !activePlayer ||
-    isUserSeeking ||
-    !activePlayer.getCurrentTime
-  ) {
-    return;
-  }
-
-  const current =
-    activePlayer.getCurrentTime() || 0;
-
-  const duration =
-    activePlayer.getDuration() || 0;
-
-  const seekBar =
-    document.getElementById("seek-bar");
-
-  seekBar.max = duration;
-  seekBar.value = current;
-
-  document.getElementById(
-    "time-current"
-  ).innerText =
-    formatTime(current);
-
-  document.getElementById(
-    "time-duration"
-  ).innerText =
-    formatTime(duration);
-}
-
   function onSeekInput() {
     isUserSeeking = true;
     const seekBar = document.getElementById('seek-bar');
@@ -1039,15 +997,52 @@
         uncachedSheets.forEach(sName => { dataCache[sName] = []; });
         if (resData.data && Array.isArray(resData.data)) {
           resData.data.forEach(item => {
-            if (dataCache[item.sheetName]) {
-              dataCache[item.sheetName].push(item);
-            }
-            if (Array.isArray(item.tags)) {
-              item.tags.forEach(t => existingTags.add(t));
-            } else if (item.tags) {
-              existingTags.add(item.tags);
-            }
-          });
+
+  // ==========================================================
+  // NicoNicoシート
+  // ==========================================================
+  if (item.sheetName === "VOCALOID_niconico") {
+
+    // GASから niconicoId が来ている場合は、そのまま保持
+    // 念のため youtubeId に入ってしまった旧形式にも対応
+    if (!item.niconicoId && item.youtubeId) {
+      item.niconicoId = item.youtubeId;
+    }
+
+    if (!item.niconicoUrl && item.niconicoId) {
+      item.niconicoUrl =
+        "https://www.nicovideo.jp/watch/" +
+        encodeURIComponent(item.niconicoId);
+    }
+
+    // NicoNicoをYouTubeとして扱わない
+    item.youtubeId = "";
+
+    // YouTube用IDリストも空にする
+    item.videoIdList = [];
+  }
+
+  // ==========================================================
+  // キャッシュへ保存
+  // ==========================================================
+  if (dataCache[item.sheetName]) {
+    dataCache[item.sheetName].push(item);
+  }
+
+  // ==========================================================
+  // タグ
+  // ==========================================================
+  if (Array.isArray(item.tags)) {
+
+    item.tags.forEach(t => {
+      existingTags.add(t);
+    });
+
+  } else if (item.tags) {
+
+    existingTags.add(item.tags);
+  }
+});
         }
         updateTagSuggestions();
       } catch (err) {
