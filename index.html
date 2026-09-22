@@ -321,6 +321,19 @@
   let nicoCurrentTime = 0;
   let nicoVolume = 1;
   let nicoMuted = false;
+  let nicoPendingPlay = false;
+
+  // ============================================================
+  // NicoNico先読み（次の問題を裏でロードしておく）
+  // ============================================================
+  let nicoActivePlayerId = NICONICO_PLAYER_ID;
+  let nicoPreloadIframe = null;
+  let nicoPreloadVideoId = "";
+  let nicoPreloadPlayerId = "";
+  let nicoPreloadReady = false;
+  let nicoPreloadDuration = 0;
+  let nicoPreloadCurrentTime = 0;
+  let nicoPreloadSerial = 0;
 
   // ポップアップ機能は一時停止中（互換性維持のため変数だけ残す）
   let popoutPlayer = null;
@@ -369,9 +382,18 @@
     return;
   }
 
+  const messagePlayerId = data.playerId;
+
+  const isActiveNicoMessage =
+    messagePlayerId === nicoActivePlayerId;
+
+  const isPreloadNicoMessage =
+    messagePlayerId !== undefined &&
+    messagePlayerId === nicoPreloadPlayerId;
+
   if (
-    data.playerId !== undefined &&
-    data.playerId !== NICONICO_PLAYER_ID
+    !isActiveNicoMessage &&
+    !isPreloadNicoMessage
   ) {
     return;
   }
@@ -386,6 +408,23 @@
 
   if (eventName === "loadComplete") {
 
+    // ----------------------------------------------------------
+    // 先読み側のロード完了
+    // ----------------------------------------------------------
+    if (isPreloadNicoMessage && !isActiveNicoMessage) {
+      nicoPreloadReady = true;
+      console.log(
+        "[NicoNico] 先読みロード完了: " +
+        nicoPreloadVideoId +
+        " / playerId=" +
+        nicoPreloadPlayerId
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // 現在再生対象のロード完了
+    // ----------------------------------------------------------
     nicoLoadCompleteAt = performance.now();
 
     const elapsed =
@@ -403,6 +442,9 @@
     isPlaying = false;
 
     updateNicoUIAfterLoad();
+
+    // 現在曲のロードが終わったら次曲を先読み開始
+    preloadNextNicoVideo();
 
     return;
   }
@@ -434,20 +476,35 @@
     //   currentTime = 5840.145 ms → 5.840145 秒
     //   duration    = 206667 ms   → 206.667 秒
     // ==========================================================
-    if (
+    const metaDurationSec =
       meta.duration !== undefined &&
       Number.isFinite(Number(meta.duration))
-    ) {
-      nicoDuration =
-        Number(meta.duration) / 1000;
-    }
+        ? Number(meta.duration) / 1000
+        : null;
 
-    if (
+    const metaCurrentTimeSec =
       meta.currentTime !== undefined &&
       Number.isFinite(Number(meta.currentTime))
-    ) {
-      nicoCurrentTime =
-        Number(meta.currentTime) / 1000;
+        ? Number(meta.currentTime) / 1000
+        : null;
+
+    // 先読み側はUIを更新せず、必要なメタデータだけ保持
+    if (isPreloadNicoMessage && !isActiveNicoMessage) {
+      if (metaDurationSec !== null) {
+        nicoPreloadDuration = metaDurationSec;
+      }
+      if (metaCurrentTimeSec !== null) {
+        nicoPreloadCurrentTime = metaCurrentTimeSec;
+      }
+      return;
+    }
+
+    if (metaDurationSec !== null) {
+      nicoDuration = metaDurationSec;
+    }
+
+    if (metaCurrentTimeSec !== null) {
+      nicoCurrentTime = metaCurrentTimeSec;
     }
 
     if (
@@ -484,6 +541,11 @@
   // ==========================================================
 
   if (eventName === "playerStatusChange") {
+
+    // 先読み側は停止状態のまま維持し、メインUIへ反映しない
+    if (isPreloadNicoMessage && !isActiveNicoMessage) {
+      return;
+    }
 
     const status =
       data.data &&
@@ -590,7 +652,7 @@
   // NicoNico iframe URL
   // ============================================================
 
-  function createNicoUrl(videoId) {
+  function createNicoUrl(videoId, playerId = NICONICO_PLAYER_ID) {
 
     return (
       NICO_ORIGIN +
@@ -598,7 +660,7 @@
       encodeURIComponent(videoId) +
       "?jsapi=1" +
       "&playerId=" +
-      encodeURIComponent(NICONICO_PLAYER_ID)
+      encodeURIComponent(playerId)
     );
   }
 
@@ -2951,6 +3013,9 @@ function onSeekChange() {
 
     if (isNicoNico) {
 
+      // YouTube用シークタイマーを停止
+      stopSeekBarTimer();
+
       currentSource =
         "niconico";
 
@@ -3020,9 +3085,14 @@ function onSeekChange() {
       }
 
 
-      loadNicoVideo(
-        videoId
-      );
+      // 次曲が先読み済みなら、iframeを差し替えるだけで即使用する
+      if (
+        isPreloadedNicoVideo(videoId)
+      ) {
+        activatePreloadedNicoVideo(videoId);
+      } else {
+        loadNicoVideo(videoId);
+      }
 
       return;
     }
@@ -4302,7 +4372,7 @@ if (currentSource === "niconico") {
   const message = {
     eventName: command,
     sourceConnectorType: 1,
-    playerId: NICONICO_PLAYER_ID
+    playerId: nicoActivePlayerId
   };
 
   if (commandData !== undefined) {
@@ -4507,7 +4577,11 @@ if (currentSource === "niconico") {
   nicoCurrentVideoId =
     videoId;
 
+  nicoActivePlayerId =
+    NICONICO_PLAYER_ID;
+
   nicoPlayerStatus = 0;
+  nicoPendingPlay = false;
 
   nicoDuration = 0;
   nicoCurrentTime = 0;
@@ -4554,6 +4628,197 @@ if (currentSource === "niconico") {
   nicoIframe.src =
     createNicoUrl(videoId);
 }
+
+  // ============================================================
+  // NicoNico先読み
+  // ============================================================
+
+  function getNextNicoVideoId() {
+
+    const nextIndex = currentIndex + 1;
+
+    if (
+      nextIndex < 0 ||
+      nextIndex >= quizData.length
+    ) {
+      return "";
+    }
+
+    const next = quizData[nextIndex];
+
+    if (!next) return "";
+
+    const isNico =
+      next.niconicoId ||
+      next.niconicoUrl ||
+      next.sheetName === "VOCALOID_niconico";
+
+    return isNico
+      ? (next.niconicoId || "")
+      : "";
+  }
+
+
+  function preloadNextNicoVideo() {
+
+    const nextVideoId =
+      getNextNicoVideoId();
+
+    if (!nextVideoId) {
+      console.log(
+        "[NicoNico] 次曲の先読み対象なし"
+      );
+      return;
+    }
+
+    if (
+      nextVideoId === nicoCurrentVideoId
+    ) {
+      return;
+    }
+
+    if (
+      nicoPreloadIframe &&
+      nicoPreloadVideoId === nextVideoId &&
+      (nicoPreloadReady || nicoPreloadIframe.src)
+    ) {
+      return;
+    }
+
+    const wrapper =
+      document.getElementById(
+        "niconico-player-wrapper"
+      );
+
+    if (!wrapper) return;
+
+    // 古い先読みiframeを破棄
+    if (nicoPreloadIframe) {
+      try {
+        nicoPreloadIframe.src = "about:blank";
+      } catch (e) {}
+      nicoPreloadIframe.remove();
+    }
+
+    nicoPreloadSerial++;
+
+    nicoPreloadPlayerId =
+      NICONICO_PLAYER_ID +
+      "-preload-" +
+      nicoPreloadSerial;
+
+    nicoPreloadVideoId =
+      nextVideoId;
+
+    nicoPreloadReady = false;
+    nicoPreloadDuration = 0;
+    nicoPreloadCurrentTime = 0;
+
+    const iframe =
+      document.createElement("iframe");
+
+    iframe.width = "640";
+    iframe.height = "360";
+    iframe.allow = "autoplay; fullscreen";
+    iframe.style.cssText =
+      "position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; left:-9999px; top:-9999px; border:0;";
+    iframe.src =
+      createNicoUrl(
+        nextVideoId,
+        nicoPreloadPlayerId
+      );
+
+    wrapper.appendChild(iframe);
+    nicoPreloadIframe = iframe;
+
+    console.log(
+      "[NicoNico] 次曲先読み開始:",
+      nextVideoId,
+      "playerId=",
+      nicoPreloadPlayerId
+    );
+  }
+
+
+  function isPreloadedNicoVideo(videoId) {
+    return Boolean(
+      nicoPreloadIframe &&
+      nicoPreloadVideoId === videoId &&
+      nicoPreloadReady
+    );
+  }
+
+
+  function activatePreloadedNicoVideo(videoId) {
+
+    if (!isPreloadedNicoVideo(videoId)) {
+      return false;
+    }
+
+    const wrapper =
+      document.getElementById(
+        "niconico-player-wrapper"
+      );
+
+    if (!wrapper || !nicoPreloadIframe) {
+      return false;
+    }
+
+    // 現在のiframeを停止してから差し替える
+    if (
+      nicoIframe &&
+      nicoIframe !== nicoPreloadIframe &&
+      nicoIframe.contentWindow
+    ) {
+      const oldPlayerId =
+        nicoActivePlayerId;
+
+      nicoIframe.contentWindow.postMessage(
+        {
+          eventName: "pause",
+          sourceConnectorType: 1,
+          playerId: oldPlayerId
+        },
+        NICO_ORIGIN
+      );
+
+      nicoIframe.remove();
+    }
+
+    nicoIframe = nicoPreloadIframe;
+    nicoActivePlayerId =
+      nicoPreloadPlayerId;
+
+    nicoCurrentVideoId =
+      nicoPreloadVideoId;
+
+    nicoPlayerStatus = 3;
+    nicoPendingPlay = false;
+    nicoDuration = nicoPreloadDuration;
+    nicoCurrentTime = nicoPreloadCurrentTime;
+    isPlaying = false;
+
+    // 先読みiframeをアクティブ化したので、次の先読み枠を空にする
+    nicoPreloadIframe = null;
+    nicoPreloadVideoId = "";
+    nicoPreloadPlayerId = "";
+    nicoPreloadReady = false;
+    nicoPreloadDuration = 0;
+    nicoPreloadCurrentTime = 0;
+
+    updateNicoUIAfterLoad();
+
+    console.log(
+      "[NicoNico] 先読み済み動画を即時切替:",
+      videoId
+    );
+
+    // さらに次の曲を先読み
+    preloadNextNicoVideo();
+
+    return true;
+  }
+
 
   // ============================================================
   // NicoNicoロード完了後UI
