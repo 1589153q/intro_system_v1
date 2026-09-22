@@ -299,9 +299,6 @@
   let quizData = [];
   let currentIndex = -1;
   let player;
-  // ポップアップ機能は一時停止中
-  let popoutWindow = null;
-
   // ============================================================
   // NicoNico
   // ============================================================
@@ -334,10 +331,6 @@
   let nicoPreloadDuration = 0;
   let nicoPreloadCurrentTime = 0;
   let nicoPreloadSerial = 0;
-
-  // ポップアップ機能は一時停止中（互換性維持のため変数だけ残す）
-  let popoutPlayer = null;
-  let popoutCheckInterval = null;
 
   let isPlaying = false;
   let actualStartSec = 0;
@@ -666,17 +659,6 @@
 
 
   // ============================================================
-  // ポップアウト状態
-  // ============================================================
-
-  function isPopoutActive() {
-    // ポップアップ機能は一時停止中。
-    // 既存コードから呼ばれても、常にメイン画面のプレイヤーを使う。
-    return false;
-  }
-
-
-  // ============================================================
   // YouTube iframe API
   // ============================================================
 
@@ -702,406 +684,6 @@
     });
 
     fetchSheetMetadata();
-  }
-
-
-  // ============================================================
-  // YouTubeポップアウト
-  // ============================================================
-
-  function openPopoutWindow() {
-
-    // ポップアップ機能は一時停止中。
-    console.log("[Popout] 現在は無効化されています");
-    return;
-
-    if (
-      popoutWindow &&
-      !popoutWindow.closed
-    ) {
-
-      popoutWindow.focus();
-      return;
-    }
-
-    let currentTime = 0;
-    const wasPlaying = isPlaying;
-
-    if (
-      player &&
-      player.getCurrentTime
-    ) {
-
-      currentTime =
-        player.getCurrentTime() || 0;
-
-      if (player.pauseVideo) {
-        player.pauseVideo();
-      }
-    }
-
-    popoutWindow =
-      window.open(
-        "",
-        "IntroQuizPopout",
-        "width=700,height=550"
-      );
-
-    const doc =
-      popoutWindow.document;
-
-    doc.write(`
-      <!DOCTYPE html>
-      <html lang="ja">
-
-      <head>
-        <meta charset="UTF-8">
-
-        <title>出題・解答スクリーン</title>
-
-        <style>
-
-          body {
-            font-family: sans-serif;
-            background: #222;
-            color: #fff;
-            text-align: center;
-            padding: 15px;
-            margin: 0;
-          }
-
-          #popout-player-wrapper {
-            display: inline-block;
-            margin-bottom: 15px;
-          }
-
-          .hide-player {
-            display: none !important;
-          }
-
-          .info-card {
-            background: #333;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 10px;
-            display: none;
-            text-align: left;
-          }
-
-          .info-card h2 {
-            margin: 0 0 10px 0;
-            color: #ffca28;
-            font-size: 20px;
-          }
-
-          .info-card p {
-            margin: 5px 0;
-            font-size: 16px;
-          }
-
-        </style>
-
-      </head>
-
-      <body>
-
-        <div
-          id="popout-player-wrapper"
-          class="hide-player"
-        >
-          <div id="popout-player"></div>
-        </div>
-
-        <div
-          id="popout-info"
-          class="info-card"
-        >
-          <h2>【正解】</h2>
-
-          <p>
-            <strong>タイトル：</strong>
-            <span id="popout-title">-</span>
-          </p>
-
-          <p>
-            <strong>投稿者 / アーティスト：</strong>
-            <span id="popout-artist">-</span>
-          </p>
-
-        </div>
-
-      </body>
-
-      </html>
-    `);
-
-
-    const script =
-      doc.createElement('script');
-
-    script.src =
-      "https://www.youtube.com/iframe_api";
-
-    doc.head.appendChild(script);
-
-
-    popoutWindow.onYouTubeIframeAPIReady =
-      function() {
-
-        popoutPlayer =
-          new popoutWindow.YT.Player(
-            'popout-player',
-            {
-
-              height: '360',
-              width: '640',
-
-              host: 'https://www.youtube.com',
-
-              playerVars: {
-                'playsinline': 1,
-                'controls': 0
-              },
-
-              events: {
-
-                'onStateChange':
-                  (e) =>
-                    window.opener
-                      ? window.opener.onPlayerStateChange(e)
-                      : onPlayerStateChange(e),
-
-                'onError':
-                  (e) =>
-                    window.opener
-                      ? window.opener.onPlayerError(e)
-                      : onPlayerError(e)
-
-              }
-            }
-          );
-
-
-        if (
-          currentIndex >= 0 &&
-          currentIndex < quizData.length
-        ) {
-
-          const current =
-            quizData[currentIndex];
-
-          popoutPlayer.loadVideoById({
-            videoId: current.youtubeId,
-            startSeconds: currentTime
-          });
-
-
-          setTimeout(() => {
-
-            popoutPlayer.mute();
-            popoutPlayer.playVideo();
-
-
-            setTimeout(() => {
-
-              popoutPlayer.pauseVideo();
-
-              popoutPlayer.seekTo(
-                currentTime,
-                true
-              );
-
-              if (!isMuted) {
-                popoutPlayer.unMute();
-              }
-
-              popoutPlayer.setVolume(
-                currentVolume
-              );
-
-              if (wasPlaying) {
-                popoutPlayer.playVideo();
-              }
-
-            }, 100);
-
-          }, 300);
-        }
-      };
-
-
-    startPopoutCloseMonitor();
-
-
-    const isAnswerShown =
-      document.getElementById(
-        'answer-card'
-      ).style.display === 'block';
-
-
-    if (
-      isAnswerShown &&
-      currentIndex >= 0 &&
-      currentIndex < quizData.length
-    ) {
-
-      const current =
-        quizData[currentIndex];
-
-      setTimeout(() => {
-
-        if (
-          popoutWindow &&
-          !popoutWindow.closed
-        ) {
-
-          const pTitle =
-            popoutWindow.document
-              .getElementById(
-                'popout-title'
-              );
-
-          const pArtist =
-            popoutWindow.document
-              .getElementById(
-                'popout-artist'
-              );
-
-          const pInfo =
-            popoutWindow.document
-              .getElementById(
-                'popout-info'
-              );
-
-
-          if (pTitle) {
-            pTitle.innerText =
-              current.videoTitle ||
-              '無題';
-          }
-
-          if (pArtist) {
-            pArtist.innerText =
-              current.artist ||
-              '不明';
-          }
-
-          if (pInfo) {
-            pInfo.style.display =
-              'block';
-          }
-        }
-
-      }, 500);
-    }
-
-
-    setTimeout(() => {
-      syncVideoVisibility();
-    }, 500);
-  }
-
-
-  // ============================================================
-  // ポップアウト監視
-  // ============================================================
-
-  function startPopoutCloseMonitor() {
-
-    if (popoutCheckInterval) {
-      clearInterval(
-        popoutCheckInterval
-      );
-    }
-
-    popoutCheckInterval =
-      setInterval(() => {
-
-        if (
-          popoutWindow &&
-          popoutWindow.closed
-        ) {
-
-          clearInterval(
-            popoutCheckInterval
-          );
-
-          onPopoutClosed();
-        }
-
-      }, 500);
-  }
-
-
-  // ============================================================
-  // ポップアウト終了
-  // ============================================================
-
-  function onPopoutClosed() {
-
-    let lastTime = 0;
-    const wasPlaying = isPlaying;
-
-    if (
-      popoutPlayer &&
-      popoutPlayer.getCurrentTime
-    ) {
-
-      lastTime =
-        popoutPlayer.getCurrentTime() ||
-        0;
-    }
-
-    popoutPlayer = null;
-    popoutWindow = null;
-
-
-    if (
-      currentIndex >= 0 &&
-      currentIndex < quizData.length &&
-      player
-    ) {
-
-      const current =
-        quizData[currentIndex];
-
-      player.loadVideoById({
-        videoId: current.youtubeId,
-        startSeconds: lastTime
-      });
-
-
-      setTimeout(() => {
-
-        player.mute();
-        player.playVideo();
-
-
-        setTimeout(() => {
-
-          player.pauseVideo();
-
-          player.seekTo(
-            lastTime,
-            true
-          );
-
-          if (!isMuted) {
-            player.unMute();
-          }
-
-          player.setVolume(
-            currentVolume
-          );
-
-          if (wasPlaying) {
-            player.playVideo();
-          }
-
-        }, 100);
-
-      }, 300);
-    }
   }
 
 
@@ -1164,16 +746,6 @@
       currentVolume
     );
   }
-
-  if (
-    isPopoutActive() &&
-    popoutPlayer &&
-    popoutPlayer.setVolume
-  ) {
-    popoutPlayer.setVolume(
-      currentVolume
-    );
-  }
 }
 
 
@@ -1220,17 +792,6 @@
       player.mute();
     } else {
       player.unMute();
-    }
-  }
-
-  if (
-    isPopoutActive()
-  ) {
-
-    if (isMuted) {
-      popoutPlayer.mute();
-    } else {
-      popoutPlayer.unMute();
     }
   }
 }
@@ -1345,41 +906,6 @@
         } else {
 
           youtubeWrapper.classList.add(
-            "hide-player"
-          );
-        }
-      }
-    }
-
-
-    // ==========================================================
-    // YouTubeポップアウト
-    // ==========================================================
-
-    if (
-      popoutWindow &&
-      !popoutWindow.closed &&
-      currentSource === "youtube"
-    ) {
-
-      const popoutWrapper =
-        popoutWindow.document
-          .getElementById(
-            "popout-player-wrapper"
-          );
-
-
-      if (popoutWrapper) {
-
-        if (isChecked) {
-
-          popoutWrapper.classList.remove(
-            "hide-player"
-          );
-
-        } else {
-
-          popoutWrapper.classList.add(
             "hide-player"
           );
         }
@@ -1567,10 +1093,7 @@
     }
 
 
-    const activePlayer =
-      isPopoutActive()
-        ? popoutPlayer
-        : player;
+    const activePlayer = player;
 
 
     if (
@@ -1712,29 +1235,8 @@ function onSeekChange() {
   // YouTube
   // ==========================================================
 
-  if (isPopoutActive()) {
-
-    if (
-      popoutPlayer &&
-      popoutPlayer.seekTo
-    ) {
-      popoutPlayer.seekTo(
-        targetSec,
-        true
-      );
-    }
-
-  } else {
-
-    if (
-      player &&
-      player.seekTo
-    ) {
-      player.seekTo(
-        targetSec,
-        true
-      );
-    }
+  if (player && player.seekTo) {
+    player.seekTo(targetSec, true);
   }
 
   isUserSeeking = false;
@@ -2930,25 +2432,6 @@ function onSeekChange() {
       "正解を表示";
 
 
-    if (
-      popoutWindow &&
-      !popoutWindow.closed
-    ) {
-
-      const pInfo =
-        popoutWindow.document
-          .getElementById(
-            "popout-info"
-          );
-
-
-      if (pInfo) {
-        pInfo.style.display =
-          "none";
-      }
-    }
-
-
     document.getElementById(
       "btn-ans"
     ).disabled =
@@ -3044,29 +2527,6 @@ function onSeekChange() {
           );
         }
       }
-
-
-      // ポップアウトYouTubeも停止
-      if (
-        isPopoutActive() &&
-        popoutPlayer &&
-        popoutPlayer.pauseVideo
-      ) {
-
-        try {
-
-          popoutPlayer.pauseVideo();
-
-        } catch (e) {
-
-          console.warn(
-            "[YouTube Popout] pause失敗:",
-            e
-          );
-        }
-      }
-
-
       syncVideoVisibility();
 
 
@@ -3138,10 +2598,7 @@ if (currentSource === "niconico") {
       ).value;
 
 
-    const targetPlayer =
-      isPopoutActive()
-        ? popoutPlayer
-        : player;
+    const targetPlayer = player;
 
 
     if (!targetPlayer) {
@@ -3378,10 +2835,7 @@ if (currentSource === "niconico") {
   // YouTube
   // ==========================================================
 
-  const activePlayer =
-    isPopoutActive()
-      ? popoutPlayer
-      : player;
+  const activePlayer = player;
 
   if (!activePlayer) return;
 
@@ -3473,25 +2927,6 @@ if (currentSource === "niconico") {
 
       btnAns.innerText =
         "正解を表示";
-
-
-      if (
-        popoutWindow &&
-        !popoutWindow.closed
-      ) {
-
-        const pInfo =
-          popoutWindow.document
-            .getElementById(
-              'popout-info'
-            );
-
-
-        if (pInfo) {
-          pInfo.style.display =
-            'none';
-        }
-      }
 
 
       return;
@@ -3746,60 +3181,6 @@ if (currentSource === "niconico") {
     btnAns.innerText =
       "正解を隠す";
 
-
-    // ==========================================================
-    // ポップアウト側
-    // YouTubeのみ使用
-    // ==========================================================
-
-    if (
-      popoutWindow &&
-      !popoutWindow.closed
-    ) {
-
-      const pTitle =
-        popoutWindow.document
-          .getElementById(
-            'popout-title'
-          );
-
-
-      const pArtist =
-        popoutWindow.document
-          .getElementById(
-            'popout-artist'
-          );
-
-
-      const pInfo =
-        popoutWindow.document
-          .getElementById(
-            'popout-info'
-          );
-
-
-      if (pTitle) {
-
-        pTitle.innerText =
-          current.videoTitle ||
-          '無題';
-      }
-
-
-      if (pArtist) {
-
-        pArtist.innerText =
-          current.artist ||
-          '不明';
-      }
-
-
-      if (pInfo) {
-
-        pInfo.style.display =
-          'block';
-      }
-    }
   }
 
 
