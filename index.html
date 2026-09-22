@@ -75,7 +75,6 @@
       <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
       <span class="slider"></span>
     </label>
-    <button onclick="openPopoutWindow()" style="font-size: 12px; margin-left: 15px; background: #6f42c1;">🪟 画面をポップアウト</button>
   </div>
 
   <div id="player-container">
@@ -300,6 +299,7 @@
   let quizData = [];
   let currentIndex = -1;
   let player;
+  // ポップアップ機能は一時停止中
   let popoutWindow = null;
 
   // ============================================================
@@ -322,6 +322,7 @@
   let nicoVolume = 1;
   let nicoMuted = false;
 
+  // ポップアップ機能は一時停止中（互換性維持のため変数だけ残す）
   let popoutPlayer = null;
   let popoutCheckInterval = null;
 
@@ -607,12 +608,9 @@
   // ============================================================
 
   function isPopoutActive() {
-
-    return (
-      popoutWindow &&
-      !popoutWindow.closed &&
-      popoutPlayer
-    );
+    // ポップアップ機能は一時停止中。
+    // 既存コードから呼ばれても、常にメイン画面のプレイヤーを使う。
+    return false;
   }
 
 
@@ -650,6 +648,10 @@
   // ============================================================
 
   function openPopoutWindow() {
+
+    // ポップアップ機能は一時停止中。
+    console.log("[Popout] 現在は無効化されています");
+    return;
 
     if (
       popoutWindow &&
