@@ -1556,12 +1556,25 @@
   }
 
 
+  function startSeekBarTimer() {
+
+    // 既存のタイマーがあれば二重起動しない
+    stopSeekBarTimer();
+
+    seekTimer = setInterval(
+      updateSeekBarUI,
+      100
+    );
+  }
+
+
   function stopSeekBarTimer() {
 
     if (seekTimer) {
       clearInterval(
         seekTimer
       );
+      seekTimer = null;
     }
   }
 
