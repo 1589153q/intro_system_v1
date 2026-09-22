@@ -201,7 +201,7 @@
         </div>
         <div>
           <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-          <button onclick="()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+          <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
         </div>
       </div>
       <div style="margin-top: 5px;">
@@ -334,21 +334,13 @@
   let currentVolume = 100;
   let isMuted = false;
 
-  let actualStartSec = 0;
-  let seekTimer = null;
-  let isUserSeeking = false;
-  let autoSkipTimeout = null;
-
-  let currentVolume = 100;
-  let isMuted = false;
-
 
   // ============================================================
   // DOMContentLoaded
   // ============================================================
-
   document.addEventListener('DOMContentLoaded', () => {
     updateSheetSelectOptions([]);
+    fetchSheetMetadata();
   });
 
 
@@ -639,7 +631,6 @@
       }
     });
 
-    fetchSheetMetadata();
   }
 
 
