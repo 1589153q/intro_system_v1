@@ -75,7 +75,7 @@
       <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
       <span class="slider"></span>
     </label>
-    <button id="btn-popout-answer" onclick="toggleAnswerPopout()" style="font-size: 12px; margin-left: 15px; background: #6f42c1;">🪟 正解を別画面で表示</button>
+    <button onclick="openPopoutWindow()" style="font-size: 12px; margin-left: 15px; background: #6f42c1;">🪟 画面をポップアウト</button>
   </div>
 
   <div id="player-container">
@@ -110,10 +110,6 @@
     <button id="btn-load" onclick="nextQuestion()" disabled>次へ ▶</button><br>
     <button id="btn-toggle" class="btn-toggle" onclick="togglePlay()" disabled>▶ 再生</button>
     <button id="btn-ans" onclick="showAnswer()" disabled>正解を表示</button>
-    <label style="font-size: 12px; margin-left: 6px; cursor: pointer;">
-      <input type="checkbox" id="answer-fixed-toggle" onchange="toggleAnswerFixed(this.checked)">
-      正解を表示固定
-    </label>
   </div>
 
   <div style="margin-top: 12px;">
@@ -205,7 +201,7 @@
         </div>
         <div>
           <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-          <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+          <button onclick="()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
         </div>
       </div>
       <div style="margin-top: 5px;">
@@ -326,11 +322,18 @@
   let nicoVolume = 1;
   let nicoMuted = false;
 
+  let popoutPlayer = null;
   let popoutCheckInterval = null;
-  let answerPopoutVisible = false;
-  let answerFixed = false;
 
   let isPlaying = false;
+  let actualStartSec = 0;
+  let seekTimer = null;
+  let isUserSeeking = false;
+  let autoSkipTimeout = null;
+
+  let currentVolume = 100;
+  let isMuted = false;
+
   let actualStartSec = 0;
   let seekTimer = null;
   let isUserSeeking = false;
@@ -343,9 +346,9 @@
   // ============================================================
   // DOMContentLoaded
   // ============================================================
+
   document.addEventListener('DOMContentLoaded', () => {
     updateSheetSelectOptions([]);
-    fetchSheetMetadata();
   });
 
 
@@ -430,18 +433,28 @@
       meta
     );
 
+    // ==========================================================
+    // 【NicoNico時間単位修正】
+    // NicoNicoの playerMetadataChange は ms（ミリ秒）で返す。
+    // このページ内部では秒に統一して扱う。
+    // 例:
+    //   currentTime = 5840.145 ms → 5.840145 秒
+    //   duration    = 206667 ms   → 206.667 秒
+    // ==========================================================
     if (
       meta.duration !== undefined &&
       Number.isFinite(Number(meta.duration))
     ) {
-      nicoDuration = Number(meta.duration);
+      nicoDuration =
+        Number(meta.duration) / 1000;
     }
 
     if (
       meta.currentTime !== undefined &&
       Number.isFinite(Number(meta.currentTime))
     ) {
-      nicoCurrentTime = Number(meta.currentTime);
+      nicoCurrentTime =
+        Number(meta.currentTime) / 1000;
     }
 
     if (
@@ -605,7 +618,8 @@
 
     return (
       popoutWindow &&
-      !popoutWindow.closed
+      !popoutWindow.closed &&
+      popoutPlayer
     );
   }
 
@@ -635,499 +649,405 @@
       }
     });
 
+    fetchSheetMetadata();
   }
 
 
   // ============================================================
-  // 正解ポップアウト
-  //
-  // 動画はポップアウトしない。
-  // メイン画面の正解カード内容だけを別ウィンドウへ複製する。
-  // 表示・非表示はメイン画面からのみ操作する。
+  // YouTubeポップアウト
   // ============================================================
 
-  function toggleAnswerPopout() {
+  function openPopoutWindow() {
 
     if (
       popoutWindow &&
       !popoutWindow.closed
     ) {
-      answerPopoutVisible = !answerPopoutVisible;
-      updateAnswerPopout();
+
       popoutWindow.focus();
       return;
     }
 
-    popoutWindow = window.open(
-      "",
-      "IntroQuizAnswerPopout",
-      "width=620,height=520,resizable=yes,scrollbars=yes"
-    );
+    let currentTime = 0;
+    const wasPlaying = isPlaying;
 
-    if (!popoutWindow) {
-      alert("ポップアウトウィンドウを開けませんでした。ブラウザのポップアップブロックを確認してください。");
-      return;
+    if (
+      player &&
+      player.getCurrentTime
+    ) {
+
+      currentTime =
+        player.getCurrentTime() || 0;
+
+      if (player.pauseVideo) {
+        player.pauseVideo();
+      }
     }
 
-    popoutWindow.document.write(`
+    popoutWindow =
+      window.open(
+        "",
+        "IntroQuizPopout",
+        "width=700,height=550"
+      );
+
+    const doc =
+      popoutWindow.document;
+
+    doc.write(`
       <!DOCTYPE html>
       <html lang="ja">
+
       <head>
         <meta charset="UTF-8">
-        <title>正解表示</title>
+
+        <title>出題・解答スクリーン</title>
+
         <style>
+
           body {
             font-family: sans-serif;
-            background: #f4f4f9;
-            color: #333;
-            padding: 20px;
+            background: #222;
+            color: #fff;
+            text-align: center;
+            padding: 15px;
             margin: 0;
           }
 
-          #popout-info {
-            background: #fff3cd;
-            border: 1px solid #ffeeba;
+          #popout-player-wrapper {
+            display: inline-block;
+            margin-bottom: 15px;
+          }
+
+          .hide-player {
+            display: none !important;
+          }
+
+          .info-card {
+            background: #333;
             border-radius: 8px;
-            padding: 18px;
-            text-align: left;
-            box-sizing: border-box;
-          }
-
-          #popout-info.hidden {
+            padding: 15px;
+            margin-top: 10px;
             display: none;
+            text-align: left;
           }
 
-          #popout-info h2 {
-            margin: 0 0 14px 0;
+          .info-card h2 {
+            margin: 0 0 10px 0;
+            color: #ffca28;
             font-size: 20px;
-            color: #d9534f;
           }
 
-          #popout-info p {
-            margin: 7px 0;
-            line-height: 1.5;
+          .info-card p {
+            margin: 5px 0;
+            font-size: 16px;
           }
 
-          .snippet-box {
-            font-size: 12px;
-            max-height: 180px;
-            overflow-y: auto;
-            background: #fff;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            margin-top: 5px;
-          }
-
-          .empty-message {
-            text-align: center;
-            color: #777;
-            padding: 50px 10px;
-          }
         </style>
+
       </head>
+
       <body>
-        <div id="popout-info" class="hidden">
+
+        <div
+          id="popout-player-wrapper"
+          class="hide-player"
+        >
+          <div id="popout-player"></div>
+        </div>
+
+        <div
+          id="popout-info"
+          class="info-card"
+        >
           <h2>【正解】</h2>
 
-          <p><strong>動画タイトル：</strong> <span id="popout-title"></span></p>
-          <p><strong>歌唱者：</strong> <span id="popout-artist"></span></p>
-          <p><strong>チャンネル名：</strong> <span id="popout-channel"></span></p>
-          <p><strong>投稿日：</strong> <span id="popout-date"></span></p>
           <p>
-            <strong>再生数：</strong> <span id="popout-views"></span> 回 /
-            <strong>いいね数：</strong> <span id="popout-likes"></span>
+            <strong>タイトル：</strong>
+            <span id="popout-title">-</span>
           </p>
 
-          <strong>説明欄：</strong>
-          <div id="popout-snippet" class="snippet-box"></div>
+          <p>
+            <strong>投稿者 / アーティスト：</strong>
+            <span id="popout-artist">-</span>
+          </p>
+
         </div>
 
-        <div id="popout-empty" class="empty-message">
-          メイン画面で「正解を表示」すると、ここに正解が表示されます。
-        </div>
       </body>
+
       </html>
     `);
 
-    popoutWindow.document.close();
 
-    popoutWindow.addEventListener("beforeunload", function() {
-      answerPopoutVisible = false;
-    });
+    const script =
+      doc.createElement('script');
 
-    answerPopoutVisible = true;
+    script.src =
+      "https://www.youtube.com/iframe_api";
+
+    doc.head.appendChild(script);
+
+
+    popoutWindow.onYouTubeIframeAPIReady =
+      function() {
+
+        popoutPlayer =
+          new popoutWindow.YT.Player(
+            'popout-player',
+            {
+
+              height: '360',
+              width: '640',
+
+              host: 'https://www.youtube.com',
+
+              playerVars: {
+                'playsinline': 1,
+                'controls': 0
+              },
+
+              events: {
+
+                'onStateChange':
+                  (e) =>
+                    window.opener
+                      ? window.opener.onPlayerStateChange(e)
+                      : onPlayerStateChange(e),
+
+                'onError':
+                  (e) =>
+                    window.opener
+                      ? window.opener.onPlayerError(e)
+                      : onPlayerError(e)
+
+              }
+            }
+          );
+
+
+        if (
+          currentIndex >= 0 &&
+          currentIndex < quizData.length
+        ) {
+
+          const current =
+            quizData[currentIndex];
+
+          popoutPlayer.loadVideoById({
+            videoId: current.youtubeId,
+            startSeconds: currentTime
+          });
+
+
+          setTimeout(() => {
+
+            popoutPlayer.mute();
+            popoutPlayer.playVideo();
+
+
+            setTimeout(() => {
+
+              popoutPlayer.pauseVideo();
+
+              popoutPlayer.seekTo(
+                currentTime,
+                true
+              );
+
+              if (!isMuted) {
+                popoutPlayer.unMute();
+              }
+
+              popoutPlayer.setVolume(
+                currentVolume
+              );
+
+              if (wasPlaying) {
+                popoutPlayer.playVideo();
+              }
+
+            }, 100);
+
+          }, 300);
+        }
+      };
+
+
     startPopoutCloseMonitor();
-    updateAnswerPopout();
-  }
 
 
-  function startPopoutCloseMonitor() {
+    const isAnswerShown =
+      document.getElementById(
+        'answer-card'
+      ).style.display === 'block';
 
-    if (popoutCheckInterval) {
-      clearInterval(popoutCheckInterval);
+
+    if (
+      isAnswerShown &&
+      currentIndex >= 0 &&
+      currentIndex < quizData.length
+    ) {
+
+      const current =
+        quizData[currentIndex];
+
+      setTimeout(() => {
+
+        if (
+          popoutWindow &&
+          !popoutWindow.closed
+        ) {
+
+          const pTitle =
+            popoutWindow.document
+              .getElementById(
+                'popout-title'
+              );
+
+          const pArtist =
+            popoutWindow.document
+              .getElementById(
+                'popout-artist'
+              );
+
+          const pInfo =
+            popoutWindow.document
+              .getElementById(
+                'popout-info'
+              );
+
+
+          if (pTitle) {
+            pTitle.innerText =
+              current.videoTitle ||
+              '無題';
+          }
+
+          if (pArtist) {
+            pArtist.innerText =
+              current.artist ||
+              '不明';
+          }
+
+          if (pInfo) {
+            pInfo.style.display =
+              'block';
+          }
+        }
+
+      }, 500);
     }
 
-    popoutCheckInterval = setInterval(() => {
 
-      if (
-        popoutWindow &&
-        popoutWindow.closed
-      ) {
-        clearInterval(popoutCheckInterval);
-        popoutCheckInterval = null;
-        popoutWindow = null;
-        answerPopoutVisible = false;
-        updatePopoutButton();
-      }
-
+    setTimeout(() => {
+      syncVideoVisibility();
     }, 500);
   }
 
 
-  function updatePopoutButton() {
-
-    const btn =
-      document.getElementById("btn-popout-answer");
-
-    if (!btn) return;
-
-    if (
-      popoutWindow &&
-      !popoutWindow.closed
-    ) {
-      btn.innerText =
-        answerPopoutVisible
-          ? "🪟 正解を隠す"
-          : "🪟 正解を表示";
-    } else {
-      btn.innerText =
-        "🪟 正解を別画面で表示";
-    }
-  }
-
-
-  function updateAnswerPopout() {
-
-    updatePopoutButton();
-
-    if (
-      !popoutWindow ||
-      popoutWindow.closed
-    ) {
-      return;
-    }
-
-    const info =
-      popoutWindow.document.getElementById(
-        "popout-info"
-      );
-
-    const empty =
-      popoutWindow.document.getElementById(
-        "popout-empty"
-      );
-
-    if (!info || !empty) {
-      return;
-    }
-
-    const current =
-      currentIndex >= 0 &&
-      currentIndex < quizData.length
-        ? quizData[currentIndex]
-        : null;
-
-    if (
-      answerPopoutVisible &&
-      current
-    ) {
-      const isNicoNico =
-        current &&
-        (
-          current.niconicoId ||
-          current.niconicoUrl ||
-          current.sheetName === "VOCALOID_niconico"
-        );
-
-      popoutWindow.document.getElementById("popout-title").innerText =
-        current.videoTitle || "";
-
-      popoutWindow.document.getElementById("popout-artist").innerText =
-        current.artist || "";
-
-      popoutWindow.document.getElementById("popout-channel").innerText =
-        isNicoNico
-          ? (current.uploaderName || "-")
-          : (current.channelName || "");
-
-      popoutWindow.document.getElementById("popout-date").innerText =
-        isNicoNico
-          ? (current.postDate || current.publishedAt || "")
-          : (current.postDate || "");
-
-      popoutWindow.document.getElementById("popout-views").innerText =
-        (current.views || 0).toLocaleString();
-
-      popoutWindow.document.getElementById("popout-likes").innerText =
-        (current.likes || 0).toLocaleString();
-
-      popoutWindow.document.getElementById("popout-snippet").innerText =
-        current.description || "";
-
-      info.classList.remove("hidden");
-      empty.style.display = "none";
-    } else {
-      info.classList.add("hidden");
-      empty.style.display = "block";
-    }
-  }
-
-
   // ============================================================
-  // 正解固定
+  // ポップアウト監視
   // ============================================================
 
-  function toggleAnswerFixed(fixed) {
+  function startPopoutCloseMonitor() {
 
-    answerFixed = Boolean(fixed);
-
-    const answerCard =
-      document.getElementById("answer-card");
-
-    const btnAns =
-      document.getElementById("btn-ans");
-
-    if (answerFixed) {
-
-      if (
-        currentIndex >= 0 &&
-        currentIndex < quizData.length
-      ) {
-        populateAnswerCard();
-      }
-
-      if (answerCard) {
-        answerCard.style.display = "block";
-      }
-
-      if (btnAns) {
-        btnAns.innerText = "正解を表示中";
-      }
-
-    } else {
-
-      if (btnAns) {
-        btnAns.innerText =
-          answerCard &&
-          answerCard.style.display === "block"
-            ? "正解を隠す"
-            : "正解を表示";
-      }
-    }
-  }
-
-
-  // 正解カードへ現在の問題情報を反映する共通関数
-  function populateAnswerCard() {
-
-    if (
-      currentIndex < 0 ||
-      currentIndex >= quizData.length
-    ) {
-      return;
-    }
-
-    const current =
-      quizData[currentIndex];
-
-    const isNicoNico =
-      current &&
-      (
-        current.niconicoId ||
-        current.niconicoUrl ||
-        current.sheetName === "VOCALOID_niconico"
+    if (popoutCheckInterval) {
+      clearInterval(
+        popoutCheckInterval
       );
-
-    document.getElementById("ans-title").innerText =
-      current.videoTitle || "";
-
-    document.getElementById("ans-artist").innerText =
-      current.artist || "";
-
-    document.getElementById("ans-channel").innerText =
-      isNicoNico
-        ? (current.uploaderName || "-")
-        : (current.channelName || "");
-
-    document.getElementById("ans-date").innerText =
-      isNicoNico
-        ? (current.postDate || current.publishedAt || "")
-        : (current.postDate || "");
-
-    document.getElementById("ans-views").innerText =
-      (current.views || 0).toLocaleString();
-
-    document.getElementById("ans-likes").innerText =
-      (current.likes || 0).toLocaleString();
-
-    document.getElementById("ans-snippet").innerText =
-      current.description || "";
-
-    const videoIdArea =
-      document.getElementById("video-id-select")
-        ?.parentElement
-        ?.parentElement;
-
-    if (videoIdArea) {
-      videoIdArea.style.display =
-        isNicoNico ? "none" : "block";
     }
 
-    const selectEl =
-      document.getElementById("video-id-select");
+    popoutCheckInterval =
+      setInterval(() => {
 
-    if (
-      selectEl &&
-      !isNicoNico
-    ) {
-      selectEl.innerHTML = "";
+        if (
+          popoutWindow &&
+          popoutWindow.closed
+        ) {
 
-      (
-        current.videoIdList ||
-        [current.youtubeId]
-      ).forEach(vid => {
-
-        if (!vid) return;
-
-        const opt =
-          document.createElement("option");
-
-        opt.value = vid;
-        opt.innerText =
-          vid +
-          (
-            vid === current.youtubeId
-              ? " (現在の代表)"
-              : ""
+          clearInterval(
+            popoutCheckInterval
           );
 
-        if (vid === current.youtubeId) {
-          opt.selected = true;
+          onPopoutClosed();
         }
 
-        selectEl.appendChild(opt);
+      }, 500);
+  }
+
+
+  // ============================================================
+  // ポップアウト終了
+  // ============================================================
+
+  function onPopoutClosed() {
+
+    let lastTime = 0;
+    const wasPlaying = isPlaying;
+
+    if (
+      popoutPlayer &&
+      popoutPlayer.getCurrentTime
+    ) {
+
+      lastTime =
+        popoutPlayer.getCurrentTime() ||
+        0;
+    }
+
+    popoutPlayer = null;
+    popoutWindow = null;
+
+
+    if (
+      currentIndex >= 0 &&
+      currentIndex < quizData.length &&
+      player
+    ) {
+
+      const current =
+        quizData[currentIndex];
+
+      player.loadVideoById({
+        videoId: current.youtubeId,
+        startSeconds: lastTime
       });
-    }
 
-    const secArea =
-      document.getElementById("custom-sec-input")
-        ?.parentElement
-        ?.parentElement;
 
-    if (secArea) {
-      secArea.style.display =
-        isNicoNico ? "none" : "block";
-    }
+      setTimeout(() => {
 
-    if (
-      !isNicoNico &&
-      document.getElementById("custom-sec-input")
-    ) {
-      document.getElementById("custom-sec-input").value =
-        current.customStartSec !== null &&
-        current.customStartSec !== undefined
-          ? current.customStartSec
-          : "";
+        player.mute();
+        player.playVideo();
+
+
+        setTimeout(() => {
+
+          player.pauseVideo();
+
+          player.seekTo(
+            lastTime,
+            true
+          );
+
+          if (!isMuted) {
+            player.unMute();
+          }
+
+          player.setVolume(
+            currentVolume
+          );
+
+          if (wasPlaying) {
+            player.playVideo();
+          }
+
+        }, 100);
+
+      }, 300);
     }
   }
 
-
-  // ============================================================
-  // 正解表示
-  // ============================================================
-
-  function showAnswer() {
-
-    if (
-      currentIndex < 0 ||
-      currentIndex >= quizData.length
-    ) {
-      return;
-    }
-
-    const answerCard =
-      document.getElementById("answer-card");
-
-    const btnAns =
-      document.getElementById("btn-ans");
-
-    if (
-      answerFixed &&
-      answerCard.style.display === "block"
-    ) {
-      return;
-    }
-
-    if (
-      answerCard.style.display === "block"
-    ) {
-      answerCard.style.display = "none";
-      btnAns.innerText = "正解を表示";
-      updateAnswerPopout();
-      return;
-    }
-
-    populateAnswerCard();
-
-    answerCard.style.display = "block";
-    btnAns.innerText =
-      answerFixed
-        ? "正解を表示中"
-        : "正解を隠す";
-
-    updateAnswerPopout();
-  }
-
-
-  // ============================================================
-  // ポップアウト表示状態を次の問題へ反映
-  // ============================================================
-
-  function resetAnswerForNextQuestion() {
-
-    const answerCard =
-      document.getElementById("answer-card");
-
-    const btnAns =
-      document.getElementById("btn-ans");
-
-    if (answerFixed) {
-
-      populateAnswerCard();
-
-      if (answerCard) {
-        answerCard.style.display = "block";
-      }
-
-      if (btnAns) {
-        btnAns.innerText = "正解を表示中";
-      }
-
-    } else {
-
-      if (answerCard) {
-        answerCard.style.display = "none";
-      }
-
-      if (btnAns) {
-        btnAns.innerText = "正解を表示";
-      }
-    }
-
-    updateAnswerPopout();
-  }
 
   // ============================================================
   // 音量
@@ -1188,6 +1108,16 @@
       currentVolume
     );
   }
+
+  if (
+    isPopoutActive() &&
+    popoutPlayer &&
+    popoutPlayer.setVolume
+  ) {
+    popoutPlayer.setVolume(
+      currentVolume
+    );
+  }
 }
 
 
@@ -1234,6 +1164,17 @@
       player.mute();
     } else {
       player.unMute();
+    }
+  }
+
+  if (
+    isPopoutActive()
+  ) {
+
+    if (isMuted) {
+      popoutPlayer.mute();
+    } else {
+      popoutPlayer.unMute();
     }
   }
 }
@@ -1348,6 +1289,41 @@
         } else {
 
           youtubeWrapper.classList.add(
+            "hide-player"
+          );
+        }
+      }
+    }
+
+
+    // ==========================================================
+    // YouTubeポップアウト
+    // ==========================================================
+
+    if (
+      popoutWindow &&
+      !popoutWindow.closed &&
+      currentSource === "youtube"
+    ) {
+
+      const popoutWrapper =
+        popoutWindow.document
+          .getElementById(
+            "popout-player-wrapper"
+          );
+
+
+      if (popoutWrapper) {
+
+        if (isChecked) {
+
+          popoutWrapper.classList.remove(
+            "hide-player"
+          );
+
+        } else {
+
+          popoutWrapper.classList.add(
             "hide-player"
           );
         }
@@ -1493,7 +1469,10 @@
 
 
   // ============================================================
-  // 時間表示
+  // 【時間表示】
+  //
+  // この関数に渡す値は「秒」。
+  // NicoNicoのms値は、この関数を呼ぶ前に /1000 する。
   // ============================================================
 
   function formatTime(seconds) {
@@ -1532,7 +1511,10 @@
     }
 
 
-    const activePlayer = player;
+    const activePlayer =
+      isPopoutActive()
+        ? popoutPlayer
+        : player;
 
 
     if (
@@ -1627,13 +1609,28 @@ function onSeekChange() {
       targetSec
     );
 
+    // ==========================================================
+    // 【NicoNicoシーク時間修正】
+    // シークバーは秒、NicoNico APIへはミリ秒で送る。
+    // ==========================================================
+    const targetMs =
+      Math.round(targetSec * 1000);
+
+    console.log(
+      "[NicoNico] seek:",
+      targetSec + " sec",
+      "=>",
+      targetMs + " ms"
+    );
+
     sendNicoPlayerCommand(
       "seek",
       {
-        time: targetSec
+        time: targetMs
       }
     );
 
+    // ページ内部では秒で保持
     nicoCurrentTime =
       targetSec;
 
@@ -1646,14 +1643,29 @@ function onSeekChange() {
   // YouTube
   // ==========================================================
 
-  if (
-    player &&
-    player.seekTo
-  ) {
-    player.seekTo(
-      targetSec,
-      true
-    );
+  if (isPopoutActive()) {
+
+    if (
+      popoutPlayer &&
+      popoutPlayer.seekTo
+    ) {
+      popoutPlayer.seekTo(
+        targetSec,
+        true
+      );
+    }
+
+  } else {
+
+    if (
+      player &&
+      player.seekTo
+    ) {
+      player.seekTo(
+        targetSec,
+        true
+      );
+    }
   }
 
   isUserSeeking = false;
@@ -2837,7 +2849,35 @@ function onSeekChange() {
     updateNavigationButtons();
 
 
-    resetAnswerForNextQuestion();
+    document.getElementById(
+      "answer-card"
+    ).style.display =
+      "none";
+
+
+    document.getElementById(
+      "btn-ans"
+    ).innerText =
+      "正解を表示";
+
+
+    if (
+      popoutWindow &&
+      !popoutWindow.closed
+    ) {
+
+      const pInfo =
+        popoutWindow.document
+          .getElementById(
+            "popout-info"
+          );
+
+
+      if (pInfo) {
+        pInfo.style.display =
+          "none";
+      }
+    }
 
 
     document.getElementById(
@@ -2933,6 +2973,28 @@ function onSeekChange() {
         }
       }
 
+
+      // ポップアウトYouTubeも停止
+      if (
+        isPopoutActive() &&
+        popoutPlayer &&
+        popoutPlayer.pauseVideo
+      ) {
+
+        try {
+
+          popoutPlayer.pauseVideo();
+
+        } catch (e) {
+
+          console.warn(
+            "[YouTube Popout] pause失敗:",
+            e
+          );
+        }
+      }
+
+
       syncVideoVisibility();
 
 
@@ -2999,7 +3061,10 @@ if (currentSource === "niconico") {
       ).value;
 
 
-    const targetPlayer = player;
+    const targetPlayer =
+      isPopoutActive()
+        ? popoutPlayer
+        : player;
 
 
     if (!targetPlayer) {
@@ -3236,7 +3301,10 @@ if (currentSource === "niconico") {
   // YouTube
   // ==========================================================
 
-  const activePlayer = player;
+  const activePlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
 
   if (!activePlayer) return;
 
@@ -3276,6 +3344,386 @@ if (currentSource === "niconico") {
   // 正解表示
   // ============================================================
 
+  function showAnswer() {
+
+    if (
+      currentIndex < 0 ||
+      currentIndex >= quizData.length
+    ) {
+
+      return;
+    }
+
+
+    const answerCard =
+      document.getElementById(
+        'answer-card'
+      );
+
+
+    const btnAns =
+      document.getElementById(
+        'btn-ans'
+      );
+
+
+    const current =
+      quizData[currentIndex];
+
+
+    const isNicoNico =
+      current &&
+      (
+        current.niconicoId ||
+        current.niconicoUrl ||
+        current.sheetName ===
+          "VOCALOID_niconico"
+      );
+
+
+    // ==========================================================
+    // 正解表示中なら隠す
+    // ==========================================================
+
+    if (
+      answerCard.style.display ===
+      'block'
+    ) {
+
+      answerCard.style.display =
+        'none';
+
+
+      btnAns.innerText =
+        "正解を表示";
+
+
+      if (
+        popoutWindow &&
+        !popoutWindow.closed
+      ) {
+
+        const pInfo =
+          popoutWindow.document
+            .getElementById(
+              'popout-info'
+            );
+
+
+        if (pInfo) {
+          pInfo.style.display =
+            'none';
+        }
+      }
+
+
+      return;
+    }
+
+
+    // ==========================================================
+    // 基本情報
+    // ==========================================================
+
+    document.getElementById(
+      'ans-title'
+    ).innerText =
+      current.videoTitle || '';
+
+
+    document.getElementById(
+      'ans-artist'
+    ).innerText =
+      current.artist || '';
+
+
+    document.getElementById(
+      'ans-channel'
+    ).innerText =
+      isNicoNico
+        ? (
+            current.uploaderName ||
+            '-'
+          )
+        : (
+            current.channelName ||
+            ''
+          );
+
+
+    document.getElementById(
+      'ans-date'
+    ).innerText =
+      isNicoNico
+        ? (
+            current.postDate ||
+            current.publishedAt ||
+            ''
+          )
+        : (
+            current.postDate ||
+            ''
+          );
+
+
+    document.getElementById(
+      'ans-views'
+    ).innerText =
+      (
+        current.views ||
+        0
+      ).toLocaleString();
+
+
+    document.getElementById(
+      'ans-likes'
+    ).innerText =
+      (
+        current.likes ||
+        0
+      ).toLocaleString();
+
+
+    document.getElementById(
+      'ans-snippet'
+    ).innerText =
+      current.description ||
+      '';
+
+
+    // ==========================================================
+    // YouTube代表動画ID選択欄
+    // NicoNicoでは非表示
+    // ==========================================================
+
+    const videoIdArea =
+      document.getElementById(
+        "video-id-select"
+      )
+      ?.parentElement
+      ?.parentElement;
+
+
+    if (videoIdArea) {
+
+      videoIdArea.style.display =
+        isNicoNico
+          ? "none"
+          : "block";
+    }
+
+
+    const selectEl =
+      document.getElementById(
+        "video-id-select"
+      );
+
+
+    if (
+      selectEl &&
+      !isNicoNico
+    ) {
+
+      selectEl.innerHTML = "";
+
+
+      (
+        current.videoIdList ||
+        [current.youtubeId]
+      ).forEach(
+        vid => {
+
+          if (!vid) {
+            return;
+          }
+
+
+          const opt =
+            document.createElement(
+              "option"
+            );
+
+
+          opt.value =
+            vid;
+
+
+          opt.innerText =
+            vid +
+            (
+              vid ===
+              current.youtubeId
+                ? " (現在の代表)"
+                : ""
+            );
+
+
+          if (
+            vid ===
+            current.youtubeId
+          ) {
+
+            opt.selected =
+              true;
+          }
+
+
+          selectEl.appendChild(
+            opt
+          );
+        }
+      );
+    }
+
+
+    // ==========================================================
+    // 指定ラントロ秒数
+    // ==========================================================
+
+    const customSecInput =
+      document.getElementById(
+        'custom-sec-input'
+      );
+
+
+    if (customSecInput) {
+
+      customSecInput.value =
+        !isNicoNico &&
+        current.customStartSec !== null
+          ? current.customStartSec
+          : "";
+    }
+
+
+    // ==========================================================
+    // コメント
+    // ==========================================================
+
+    const commentInput =
+      document.getElementById(
+        'comment-input'
+      );
+
+
+    if (commentInput) {
+
+      commentInput.value =
+        current.comment || "";
+    }
+
+
+    // ==========================================================
+    // 保存ステータス
+    // ==========================================================
+
+    document.getElementById(
+      'video-save-status'
+    ).innerText = "";
+
+
+    document.getElementById(
+      'sec-save-status'
+    ).innerText = "";
+
+
+    document.getElementById(
+      'comment-save-status'
+    ).innerText = "";
+
+
+    document.getElementById(
+      'disable-status'
+    ).innerText = "";
+
+
+    // ==========================================================
+    // NicoNicoでは指定秒数UIも隠す
+    // ==========================================================
+
+    if (customSecInput) {
+
+      const secArea =
+        customSecInput.parentElement
+          ?.parentElement;
+
+
+      if (secArea) {
+
+        secArea.style.display =
+          isNicoNico
+            ? "none"
+            : "block";
+      }
+    }
+
+
+    // ==========================================================
+    // 正解カード表示
+    // ==========================================================
+
+    answerCard.style.display =
+      'block';
+
+
+    btnAns.innerText =
+      "正解を隠す";
+
+
+    // ==========================================================
+    // ポップアウト側
+    // YouTubeのみ使用
+    // ==========================================================
+
+    if (
+      popoutWindow &&
+      !popoutWindow.closed
+    ) {
+
+      const pTitle =
+        popoutWindow.document
+          .getElementById(
+            'popout-title'
+          );
+
+
+      const pArtist =
+        popoutWindow.document
+          .getElementById(
+            'popout-artist'
+          );
+
+
+      const pInfo =
+        popoutWindow.document
+          .getElementById(
+            'popout-info'
+          );
+
+
+      if (pTitle) {
+
+        pTitle.innerText =
+          current.videoTitle ||
+          '無題';
+      }
+
+
+      if (pArtist) {
+
+        pArtist.innerText =
+          current.artist ||
+          '不明';
+      }
+
+
+      if (pInfo) {
+
+        pInfo.style.display =
+          'block';
+      }
+    }
+  }
 
 
   // ============================================================
@@ -3865,6 +4313,16 @@ if (currentSource === "niconico") {
   );
 }
 
+  // ============================================================
+  // 【NicoNico時間処理・UI】
+  //
+  // 重要:
+  // NicoNico API → ミリ秒
+  // このページの内部値 → 秒
+  // シークバー → 秒
+  // 表示 → 秒を formatTime() へ渡す
+  // ============================================================
+
   function updateNicoPlaybackUI(meta = {}) {
 
   if (currentSource !== "niconico") {
@@ -3890,66 +4348,89 @@ if (currentSource === "niconico") {
     document.getElementById("mute-checkbox");
 
   // ==========================================================
-  // 再生時間
+  // 【NicoNico時間 → 秒へ変換】
   // ==========================================================
 
-  const currentTime =
-    meta.currentTime !== undefined
-      ? Number(meta.currentTime)
-      : nicoCurrentTime;
-
-  const duration =
-    meta.duration !== undefined
-      ? Number(meta.duration)
-      : nicoDuration;
+  let currentTime = nicoCurrentTime;
+  let duration = nicoDuration;
 
   if (
-    Number.isFinite(currentTime)
+    meta.currentTime !== undefined &&
+    Number.isFinite(Number(meta.currentTime))
   ) {
+    currentTime =
+      Number(meta.currentTime) / 1000;
+  }
 
-    nicoCurrentTime = currentTime;
+  if (
+    meta.duration !== undefined &&
+    Number.isFinite(Number(meta.duration))
+  ) {
+    duration =
+      Number(meta.duration) / 1000;
+  }
+
+  // ==========================================================
+  // 【現在時間】
+  // ==========================================================
+
+  if (Number.isFinite(currentTime)) {
+
+    nicoCurrentTime =
+      Math.max(0, currentTime);
 
     if (currentTimeEl) {
       currentTimeEl.innerText =
-        formatTime(currentTime);
+        formatTime(nicoCurrentTime);
     }
 
     if (
       seekBar &&
       !isUserSeeking
     ) {
-      seekBar.value = currentTime;
+      seekBar.value =
+        nicoCurrentTime;
     }
   }
+
+  // ==========================================================
+  // 【動画長】
+  // ==========================================================
 
   if (
     Number.isFinite(duration) &&
     duration > 0
   ) {
 
-    nicoDuration = duration;
+    nicoDuration =
+      duration;
 
     if (seekBar) {
-      seekBar.max = duration;
+
+      // シークバーも「秒」で統一
+      seekBar.min = 0;
+      seekBar.max =
+        nicoDuration;
+      seekBar.step = 0.1;
       seekBar.disabled = false;
 
       if (!isUserSeeking) {
         seekBar.value =
           Math.min(
             nicoCurrentTime,
-            duration
+            nicoDuration
           );
       }
     }
 
     if (durationEl) {
       durationEl.innerText =
-        formatTime(duration);
+        formatTime(nicoDuration);
     }
   }
 
   // ==========================================================
-  // 音量
+  // 【音量】
   // ==========================================================
 
   if (
@@ -3977,14 +4458,16 @@ if (currentSource === "niconico") {
   }
 
   // ==========================================================
-  // ミュート
+  // 【ミュート】
   // ==========================================================
 
   if (meta.muted !== undefined) {
+
     nicoMuted =
       Boolean(meta.muted);
 
-    isMuted = nicoMuted;
+    isMuted =
+      nicoMuted;
   }
 
   if (muteCheckbox) {
@@ -4041,10 +4524,16 @@ if (currentSource === "niconico") {
       "seek-bar"
     );
 
+  // ==========================================================
+  // 【NicoNicoシークバー初期化】
+  // 内部単位は秒
+  // ==========================================================
   if (seekBar) {
     seekBar.disabled = true;
+    seekBar.min = 0;
     seekBar.value = 0;
     seekBar.max = 100;
+    seekBar.step = 0.1;
   }
 
   document.getElementById(
@@ -4091,9 +4580,19 @@ if (currentSource === "niconico") {
   if (seekBar) {
 
     if (nicoDuration > 0) {
+      // ========================================================
+      // 【NicoNicoシークバー】
+      // nicoDuration / nicoCurrentTime は秒
+      // ========================================================
       seekBar.disabled = false;
+      seekBar.min = 0;
       seekBar.max = nicoDuration;
-      seekBar.value = nicoCurrentTime;
+      seekBar.step = 0.1;
+      seekBar.value =
+        Math.min(
+          nicoCurrentTime,
+          nicoDuration
+        );
     } else {
       seekBar.disabled = true;
       seekBar.value = 0;
