@@ -312,21 +312,27 @@
   let nicoIframe = null;
   let nicoPlayerStatus = 0;
   let currentSource = "youtube"; // "youtube" or "niconico"
-
   let nicoCurrentVideoId = "";
+
   let nicoLoadStartedAt = 0;
   let nicoLoadCompleteAt = 0;
 
-  // NicoNicoのロード世代
-  let nicoLoadToken = 0;
-
-  // ロード中に再生ボタンを押したか
-  let nicoPendingPlay = false;
+  let nicoDuration = 0;
+  let nicoCurrentTime = 0;
+  let nicoVolume = 1;
+  let nicoMuted = false;
 
   let popoutPlayer = null;
   let popoutCheckInterval = null;
 
   let isPlaying = false;
+  let actualStartSec = 0;
+  let seekTimer = null;
+  let isUserSeeking = false;
+  let autoSkipTimeout = null;
+
+  let currentVolume = 100;
+  let isMuted = false;
 
   let actualStartSec = 0;
   let seekTimer = null;
@@ -352,205 +358,229 @@
 
   window.addEventListener("message", function(event) {
 
-    if (event.origin !== NICO_ORIGIN) {
+  if (event.origin !== NICO_ORIGIN) {
+    return;
+  }
+
+  let data = event.data;
+
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch (e) {
       return;
     }
+  }
 
-    let data = event.data;
+  if (!data || typeof data !== "object") {
+    return;
+  }
 
-    if (typeof data === "string") {
-      try {
-        data = JSON.parse(data);
-      } catch (e) {
-        return;
-      }
-    }
+  if (
+    data.playerId !== undefined &&
+    data.playerId !== NICONICO_PLAYER_ID
+  ) {
+    return;
+  }
 
-    if (!data || typeof data !== "object") {
-      return;
+  const eventName = data.eventName;
+
+  console.log("[NicoNico] message:", data);
+
+  // ==========================================================
+  // 動画ロード完了
+  // ==========================================================
+
+  if (eventName === "loadComplete") {
+
+    nicoLoadCompleteAt = performance.now();
+
+    const elapsed =
+      nicoLoadCompleteAt - nicoLoadStartedAt;
+
+    console.log(
+      "[NicoNico] loadComplete: " +
+      nicoCurrentVideoId +
+      " / " +
+      Math.round(elapsed) +
+      "ms"
+    );
+
+    nicoPlayerStatus = 3;
+    isPlaying = false;
+
+    updateNicoUIAfterLoad();
+
+    return;
+  }
+
+  // ==========================================================
+  // メタデータ更新
+  //
+  // duration
+  // currentTime
+  // volume
+  // muted
+  // maximumBuffered
+  // ==========================================================
+
+  if (eventName === "playerMetadataChange") {
+
+    const meta = data.data || {};
+
+    console.log(
+      "[NicoNico] metadata:",
+      meta
+    );
+
+    if (
+      meta.duration !== undefined &&
+      Number.isFinite(Number(meta.duration))
+    ) {
+      nicoDuration = Number(meta.duration);
     }
 
     if (
-      data.playerId !== undefined &&
-      data.playerId !== NICONICO_PLAYER_ID
+      meta.currentTime !== undefined &&
+      Number.isFinite(Number(meta.currentTime))
     ) {
-      return;
+      nicoCurrentTime = Number(meta.currentTime);
     }
 
-    const eventName = data.eventName;
+    if (
+      meta.volume !== undefined &&
+      Number.isFinite(Number(meta.volume))
+    ) {
+      nicoVolume = Number(meta.volume);
 
-    console.log("[NicoNico] message:", data);
+      currentVolume =
+        Math.round(nicoVolume * 100);
+    }
 
+    if (meta.muted !== undefined) {
+      nicoMuted = Boolean(meta.muted);
+      isMuted = nicoMuted;
+    }
 
-    // ==========================================================
-    // loadComplete
-    // ==========================================================
+    if (currentSource === "niconico") {
+      updateNicoPlaybackUI(meta);
+    }
 
-    if (eventName === "loadComplete") {
+    return;
+  }
 
-      nicoLoadCompleteAt = performance.now();
+  // ==========================================================
+  // 再生状態
+  //
+  // 1 = 読み込み・再生準備
+  // 2 = 再生中
+  // 3 = 一時停止
+  // 4 = 再生終了
+  //
+  // 4でも「次へ」は実行しない
+  // ==========================================================
 
-      const elapsed =
-        nicoLoadCompleteAt - nicoLoadStartedAt;
+  if (eventName === "playerStatusChange") {
 
-      console.log(
-        "[NicoNico] loadComplete: " +
-        nicoCurrentVideoId +
-        " / " +
-        Math.round(elapsed) +
-        "ms"
-      );
+    const status =
+      data.data &&
+      data.data.playerStatus;
 
-      // ========================================================
-      // 現在の動画のロード完了
-      // ========================================================
+    nicoPlayerStatus = Number(status);
 
-      nicoPlayerStatus = 3;
+    console.log(
+      "[NicoNico] playerStatus raw:",
+      status,
+      "type:",
+      typeof status
+    );
 
-      // ロード完了時点では再生していない
+    console.log(
+      "[NicoNico] playerStatus data:",
+      data.data
+    );
+
+    console.log(
+      "[NicoNico] status",
+      nicoPlayerStatus
+    );
+
+    const btn =
+      document.getElementById("btn-toggle");
+
+    if (!btn) return;
+
+    // --------------------------------------------------------
+    // 1 = 再生準備中
+    // --------------------------------------------------------
+
+    if (nicoPlayerStatus === 1) {
+
       isPlaying = false;
 
-      updateNicoUIAfterLoad();
+      btn.innerText =
+        "⏳ 再生準備中";
 
-
-      // ========================================================
-      // ロード中に再生ボタンが押されていた場合
-      // ========================================================
-
-      if (nicoPendingPlay) {
-
-        console.log(
-          "[NicoNico] ロード完了 → 再生予約あり"
-        );
-
-        nicoPendingPlay = false;
-
-        // loadComplete直後は内部状態が
-        // playerStatus=1になる場合があるため、
-        // 次のイベントループでplayを送信
-        setTimeout(() => {
-
-          // NicoNico以外へ移動していたら再生しない
-          if (currentSource !== "niconico") {
-
-            console.log(
-              "[NicoNico] 再生予約キャンセル: source変更"
-            );
-
-            return;
-          }
-
-          // iframeが無ければ再生しない
-          if (
-            !nicoIframe ||
-            !nicoIframe.contentWindow
-          ) {
-
-            console.warn(
-              "[NicoNico] 再生予約キャンセル: iframeなし"
-            );
-
-            return;
-          }
-
-          console.log(
-            "[NicoNico] reserved play"
-          );
-
-          isPlaying = true;
-
-          sendNicoPlayerCommand("play");
-
-        }, 0);
-      }
+      btn.classList.remove("playing");
 
       return;
     }
 
+    // --------------------------------------------------------
+    // 2 = 再生中
+    // --------------------------------------------------------
 
-    // ==========================================================
-    // playerStatusChange
-    // ==========================================================
+    if (nicoPlayerStatus === 2) {
 
-    if (eventName === "playerStatusChange") {
+      isPlaying = true;
 
-      const status =
-        data.data &&
-        data.data.playerStatus;
+      btn.innerText =
+        "■ 停止 (一時停止)";
 
-      nicoPlayerStatus = Number(status);
-
-      console.log(
-        "[NicoNico] playerStatus raw:",
-        status,
-        "type:",
-        typeof status
-      );
-
-      console.log(
-        "[NicoNico] playerStatus data:",
-        data.data
-      );
-
-      console.log(
-        "[NicoNico] status",
-        nicoPlayerStatus
-      );
-
-
-      // ========================================================
-      // 1 = 再生準備中
-      // ========================================================
-
-      if (nicoPlayerStatus === 1) {
-
-        // 再生予約中の場合は
-        // ボタン状態だけ「準備中」にする
-        document.getElementById("btn-toggle").innerText =
-          "⏳ 再生準備中";
-
-        return;
-      }
-
-
-      // ========================================================
-      // 2 = 再生中
-      // ========================================================
-
-      if (nicoPlayerStatus === 2) {
-
-        isPlaying = true;
-
-        document.getElementById("btn-toggle").innerText =
-          "■ 停止 (一時停止)";
-
-        document.getElementById("btn-toggle")
-          .classList.add("playing");
-
-        return;
-      }
-
-
-      // ========================================================
-      // 3 = 停止 / 一時停止
-      // ========================================================
-
-      if (nicoPlayerStatus === 3) {
-
-        isPlaying = false;
-
-        document.getElementById("btn-toggle").innerText =
-          "▶ 再生";
-
-        document.getElementById("btn-toggle")
-          .classList.remove("playing");
-
-        return;
-      }
+      btn.classList.add("playing");
 
       return;
     }
-  });
+
+    // --------------------------------------------------------
+    // 3 = 一時停止
+    // --------------------------------------------------------
+
+    if (nicoPlayerStatus === 3) {
+
+      isPlaying = false;
+
+      btn.innerText =
+        "▶ 再生";
+
+      btn.classList.remove("playing");
+
+      return;
+    }
+
+    // --------------------------------------------------------
+    // 4 = 再生終了
+    //
+    // 自動で次へは進まない
+    // --------------------------------------------------------
+
+    if (nicoPlayerStatus === 4) {
+
+      isPlaying = false;
+
+      btn.innerText =
+        "▶ 再生";
+
+      btn.classList.remove("playing");
+
+      console.log(
+        "[NicoNico] 再生終了 → 自動次曲移動なし"
+      );
+
+      return;
+    }
+  }
+});
 
 
   // ============================================================
@@ -1015,36 +1045,70 @@
 
   function changeVolume(val) {
 
-    currentVolume =
-      Number(val);
+  currentVolume =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Number(val) || 0
+      )
+    );
 
-    document.getElementById(
-      'volume-text'
-    ).innerText =
-      `${currentVolume}%`;
+  document.getElementById(
+    "volume-text"
+  ).innerText =
+    `${currentVolume}%`;
 
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
 
-    if (
-      player &&
-      player.setVolume
-    ) {
+  if (currentSource === "niconico") {
 
-      player.setVolume(
-        currentVolume
-      );
-    }
+    const volume =
+      currentVolume / 100;
 
+    nicoVolume =
+      volume;
 
-    if (
-      isPopoutActive() &&
-      popoutPlayer.setVolume
-    ) {
+    console.log(
+      "[NicoNico] volume:",
+      volume
+    );
 
-      popoutPlayer.setVolume(
-        currentVolume
-      );
-    }
+    sendNicoPlayerCommand(
+      "volumeChange",
+      {
+        volume: volume
+      }
+    );
+
+    return;
   }
+
+  // ==========================================================
+  // YouTube
+  // ==========================================================
+
+  if (
+    player &&
+    player.setVolume
+  ) {
+    player.setVolume(
+      currentVolume
+    );
+  }
+
+  if (
+    isPopoutActive() &&
+    popoutPlayer &&
+    popoutPlayer.setVolume
+  ) {
+    popoutPlayer.setVolume(
+      currentVolume
+    );
+  }
+}
 
 
   // ============================================================
@@ -1053,27 +1117,57 @@
 
   function toggleMute(muted) {
 
-    isMuted = muted;
+  isMuted =
+    Boolean(muted);
 
-    if (player) {
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
 
-      if (isMuted) {
-        player.mute();
-      } else {
-        player.unMute();
+  if (currentSource === "niconico") {
+
+    nicoMuted =
+      isMuted;
+
+    console.log(
+      "[NicoNico] mute:",
+      isMuted
+    );
+
+    sendNicoPlayerCommand(
+      "mute",
+      {
+        mute: isMuted
       }
-    }
+    );
 
+    return;
+  }
 
-    if (isPopoutActive()) {
+  // ==========================================================
+  // YouTube
+  // ==========================================================
 
-      if (isMuted) {
-        popoutPlayer.mute();
-      } else {
-        popoutPlayer.unMute();
-      }
+  if (player) {
+
+    if (isMuted) {
+      player.mute();
+    } else {
+      player.unMute();
     }
   }
+
+  if (
+    isPopoutActive()
+  ) {
+
+    if (isMuted) {
+      popoutPlayer.mute();
+    } else {
+      popoutPlayer.unMute();
+    }
+  }
+}
 
 
   // ============================================================
@@ -1467,60 +1561,87 @@
 
   function onSeekInput() {
 
-    isUserSeeking = true;
+  isUserSeeking = true;
 
-    const seekBar =
-      document.getElementById(
-        'seek-bar'
-      );
+  const seekBar =
+    document.getElementById("seek-bar");
 
+  if (!seekBar) return;
 
-    document.getElementById(
-      'time-current'
-    ).innerText =
-      formatTime(
-        seekBar.value
-      );
-  }
+  document.getElementById(
+    "time-current"
+  ).innerText =
+    formatTime(seekBar.value);
+}
 
 
-  function onSeekChange() {
+function onSeekChange() {
 
-    const seekBar =
-      document.getElementById(
-        'seek-bar'
-      );
+  const seekBar =
+    document.getElementById("seek-bar");
 
-    const targetSec =
-      seekBar.value;
+  if (!seekBar) return;
 
+  const targetSec =
+    Number(seekBar.value);
 
-    if (isPopoutActive()) {
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
 
-      if (popoutPlayer.seekTo) {
-        popoutPlayer.seekTo(
-          targetSec,
-          true
-        );
+  if (currentSource === "niconico") {
+
+    console.log(
+      "[NicoNico] seek:",
+      targetSec
+    );
+
+    sendNicoPlayerCommand(
+      "seek",
+      {
+        time: targetSec
       }
+    );
 
-    } else {
-
-      if (
-        player &&
-        player.seekTo
-      ) {
-
-        player.seekTo(
-          targetSec,
-          true
-        );
-      }
-    }
-
+    nicoCurrentTime =
+      targetSec;
 
     isUserSeeking = false;
+
+    return;
   }
+
+  // ==========================================================
+  // YouTube
+  // ==========================================================
+
+  if (isPopoutActive()) {
+
+    if (
+      popoutPlayer &&
+      popoutPlayer.seekTo
+    ) {
+      popoutPlayer.seekTo(
+        targetSec,
+        true
+      );
+    }
+
+  } else {
+
+    if (
+      player &&
+      player.seekTo
+    ) {
+      player.seekTo(
+        targetSec,
+        true
+      );
+    }
+  }
+
+  isUserSeeking = false;
+}
 
 
   // ============================================================
@@ -2871,7 +2992,30 @@
       return;
     }
 
+    // ==========================================================
+// NicoNicoからYouTubeへ切り替える場合
+// NicoNicoが裏で再生し続けないよう停止
+// ==========================================================
 
+if (currentSource === "niconico") {
+
+  if (
+    nicoIframe &&
+    nicoIframe.contentWindow
+  ) {
+
+    console.log(
+      "[NicoNico] YouTubeへ切り替えるため停止"
+    );
+
+    sendNicoPlayerCommand(
+      "pause"
+    );
+  }
+
+  isPlaying = false;
+}
+    
     // ==========================================================
     // YouTube
     // ==========================================================
@@ -3049,160 +3193,123 @@
 
   function togglePlay() {
 
-    // ==========================================================
-    // NicoNico
-    // ==========================================================
+  // ==========================================================
+  // NicoNico
+  // ==========================================================
+
+  if (currentSource === "niconico") {
+
+    console.log(
+      "[NicoNico] togglePlay"
+    );
 
     if (
-      currentSource ===
-      "niconico"
+      !nicoIframe ||
+      !nicoIframe.contentWindow
     ) {
+      console.warn(
+        "[NicoNico] iframeがありません"
+      );
+      return;
+    }
+
+    // 再生中 → 一時停止
+    if (nicoPlayerStatus === 2) {
 
       console.log(
-        "[NicoNico] togglePlay"
+        "[NicoNico] pause"
       );
 
+      isPlaying = false;
 
-      if (!nicoIframe) {
-
-        console.warn(
-          "[NicoNico] iframeがありません"
-        );
-
-        return;
-      }
-
-
-      // ========================================================
-      // 現在再生中 → 一時停止
-      // ========================================================
-
-      if (
-        nicoPlayerStatus === 2
-      ) {
-
-        console.log(
-          "[NicoNico] pause"
-        );
-
-
-        isPlaying = false;
-
-        nicoPendingPlay = false;
-
-
-        sendNicoPlayerCommand(
-          "pause"
-        );
-
-
-        return;
-      }
-
-
-      // ========================================================
-      // ロード中
-      // ========================================================
-
-      if (
-        nicoPlayerStatus === 0 ||
-        nicoPlayerStatus === 1
-      ) {
-
-        console.log(
-          "[NicoNico] ロード中 → 再生予約"
-        );
-
-
-        nicoPendingPlay = true;
-
-        isPlaying = true;
-
-
-        return;
-      }
-
-
-      // ========================================================
-      // 停止・一時停止状態 → 再生
-      // ========================================================
-
-      if (
-        nicoPlayerStatus === 3
-      ) {
-
-        console.log(
-          "[NicoNico] play"
-        );
-
-
-        nicoPendingPlay = false;
-
-        isPlaying = true;
-
-
-        sendNicoPlayerCommand(
-          "play"
-        );
-
-
-        return;
-      }
-
+      sendNicoPlayerCommand(
+        "pause"
+      );
 
       return;
     }
 
+    // 読み込み中
+    if (nicoPlayerStatus === 0) {
 
-    // ==========================================================
-    // YouTube
-    // ==========================================================
+      console.log(
+        "[NicoNico] まだロード完了していません"
+      );
 
-    const activePlayer =
-      isPopoutActive()
-        ? popoutPlayer
-        : player;
-
-
-    if (!activePlayer) {
       return;
     }
 
+    // 一時停止 / ロード完了 / 終了
+    console.log(
+      "[NicoNico] play"
+    );
 
-    if (isPlaying) {
+    isPlaying = true;
 
-      if (
-        activePlayer.pauseVideo
-      ) {
+    // 音量・ミュート状態を再適用
+    sendNicoPlayerCommand(
+      "volumeChange",
+      {
+        volume:
+          currentVolume / 100
+      }
+    );
 
-        activePlayer.pauseVideo();
+    sendNicoPlayerCommand(
+      "mute",
+      {
+        mute: isMuted
+      }
+    );
+
+    sendNicoPlayerCommand(
+      "play"
+    );
+
+    return;
+  }
+
+  // ==========================================================
+  // YouTube
+  // ==========================================================
+
+  const activePlayer =
+    isPopoutActive()
+      ? popoutPlayer
+      : player;
+
+  if (!activePlayer) return;
+
+  if (isPlaying) {
+
+    if (
+      activePlayer.pauseVideo
+    ) {
+      activePlayer.pauseVideo();
+    }
+
+  } else {
+
+    if (
+      activePlayer.playVideo
+    ) {
+
+      if (!isMuted) {
+        activePlayer.unMute();
       }
 
-    } else {
-
       if (
-        activePlayer.playVideo
+        activePlayer.setVolume
       ) {
-
-        if (!isMuted) {
-          activePlayer.unMute();
-        }
-
-
-        if (
-          activePlayer.setVolume
-        ) {
-
-          activePlayer.setVolume(
-            currentVolume
-          );
-        }
-
-
-        activePlayer.playVideo();
+        activePlayer.setVolume(
+          currentVolume
+        );
       }
+
+      activePlayer.playVideo();
     }
   }
+}
 
 
   // ============================================================
@@ -4140,210 +4247,237 @@
   // NicoNicoコマンド送信
   // ============================================================
 
-  function sendNicoPlayerCommand(
-    command
+  function sendNicoPlayerCommand(command, commandData = undefined) {
+
+  if (!nicoIframe || !nicoIframe.contentWindow) {
+
+    console.warn(
+      "[NicoNico] iframeがまだありません"
+    );
+
+    return;
+  }
+
+  console.log(
+    "[NicoNico] command:",
+    command,
+    commandData
+  );
+
+  const message = {
+    eventName: command,
+    sourceConnectorType: 1,
+    playerId: NICONICO_PLAYER_ID
+  };
+
+  if (commandData !== undefined) {
+    message.data = commandData;
+  }
+
+  console.log(
+    "[NicoNico] postMessage:",
+    message
+  );
+
+  nicoIframe.contentWindow.postMessage(
+    message,
+    NICO_ORIGIN
+  );
+}
+
+  function updateNicoPlaybackUI(meta = {}) {
+
+  if (currentSource !== "niconico") {
+    return;
+  }
+
+  const seekBar =
+    document.getElementById("seek-bar");
+
+  const currentTimeEl =
+    document.getElementById("time-current");
+
+  const durationEl =
+    document.getElementById("time-duration");
+
+  const volumeSlider =
+    document.getElementById("volume-slider");
+
+  const volumeText =
+    document.getElementById("volume-text");
+
+  const muteCheckbox =
+    document.getElementById("mute-checkbox");
+
+  // ==========================================================
+  // 再生時間
+  // ==========================================================
+
+  const currentTime =
+    meta.currentTime !== undefined
+      ? Number(meta.currentTime)
+      : nicoCurrentTime;
+
+  const duration =
+    meta.duration !== undefined
+      ? Number(meta.duration)
+      : nicoDuration;
+
+  if (
+    Number.isFinite(currentTime)
   ) {
 
-    if (
-      !nicoIframe ||
-      !nicoIframe.contentWindow
-    ) {
+    nicoCurrentTime = currentTime;
 
-      console.warn(
-        "[NicoNico] iframeがまだありません"
-      );
-
-      return;
+    if (currentTimeEl) {
+      currentTimeEl.innerText =
+        formatTime(currentTime);
     }
 
-
-    console.log(
-      "[NicoNico] command:",
-      command
-    );
-
-
-    const message = {
-
-      eventName:
-        command,
-
-      sourceConnectorType:
-        1,
-
-      playerId:
-        NICONICO_PLAYER_ID
-    };
-
-
-    console.log(
-      "[NicoNico] postMessage:",
-      message
-    );
-
-
-    nicoIframe.contentWindow.postMessage(
-      message,
-      NICO_ORIGIN
-    );
+    if (
+      seekBar &&
+      !isUserSeeking
+    ) {
+      seekBar.value = currentTime;
+    }
   }
+
+  if (
+    Number.isFinite(duration) &&
+    duration > 0
+  ) {
+
+    nicoDuration = duration;
+
+    if (seekBar) {
+      seekBar.max = duration;
+      seekBar.disabled = false;
+
+      if (!isUserSeeking) {
+        seekBar.value =
+          Math.min(
+            nicoCurrentTime,
+            duration
+          );
+      }
+    }
+
+    if (durationEl) {
+      durationEl.innerText =
+        formatTime(duration);
+    }
+  }
+
+  // ==========================================================
+  // 音量
+  // ==========================================================
+
+  if (
+    meta.volume !== undefined &&
+    Number.isFinite(Number(meta.volume))
+  ) {
+
+    nicoVolume =
+      Number(meta.volume);
+
+    currentVolume =
+      Math.round(
+        nicoVolume * 100
+      );
+  }
+
+  if (volumeSlider) {
+    volumeSlider.value =
+      currentVolume;
+  }
+
+  if (volumeText) {
+    volumeText.innerText =
+      `${currentVolume}%`;
+  }
+
+  // ==========================================================
+  // ミュート
+  // ==========================================================
+
+  if (meta.muted !== undefined) {
+    nicoMuted =
+      Boolean(meta.muted);
+
+    isMuted = nicoMuted;
+  }
+
+  if (muteCheckbox) {
+    muteCheckbox.checked =
+      isMuted;
+  }
+}
 
 
   // ============================================================
   // NicoNico動画ロード
   // ============================================================
 
-  function loadNicoVideo(
-    videoId
-  ) {
+  function loadNicoVideo(videoId) {
 
-    if (!nicoIframe) {
-
-      nicoIframe =
-        document.getElementById(
-          "niconico-player"
-        );
-    }
-
-
-    if (!nicoIframe) {
-
-      console.error(
-        "[NicoNico] iframeが見つかりません"
-      );
-
-      return;
-    }
-
-
-    // ==========================================================
-    // 新しいロード開始
-    // ==========================================================
-
-    nicoLoadToken++;
-
-
-    const thisLoadToken =
-      nicoLoadToken;
-
-
-    // 新しい動画へ移動した時点では
-    // 「ロード中に再生ボタンが押された」という予約を解除
-    nicoPendingPlay = false;
-
-
-    nicoCurrentVideoId =
-      videoId;
-
-
-    // 0 = 未ロード
-    // 1 = 準備中
-    // 2 = 再生中
-    // 3 = 停止
-    nicoPlayerStatus = 0;
-
-
-    isPlaying = false;
-
-
-    nicoLoadStartedAt =
-      performance.now();
-
-
-    nicoLoadCompleteAt = 0;
-
-
-    console.log(
-      "[NicoNico] 動画ロード開始"
-    );
-
-
-    console.log(
-      "[NicoNico] video=" +
-      videoId
-    );
-
-
-    console.log(
-      "[NicoNico] loadToken=" +
-      thisLoadToken
-    );
-
-
-    // ==========================================================
-    // UIをロード中状態にする
-    // ==========================================================
-
-    const btnToggle =
+  if (!nicoIframe) {
+    nicoIframe =
       document.getElementById(
-        "btn-toggle"
-      );
-
-
-    const btnAns =
-      document.getElementById(
-        "btn-ans"
-      );
-
-
-    const seekBar =
-      document.getElementById(
-        "seek-bar"
-      );
-
-
-    if (btnToggle) {
-
-      btnToggle.disabled =
-        true;
-
-
-      btnToggle.innerText =
-        "読み込み中...";
-
-
-      btnToggle.classList.remove(
-        "playing"
-      );
-    }
-
-
-    if (btnAns) {
-      btnAns.disabled = true;
-    }
-
-
-    if (seekBar) {
-
-      seekBar.disabled =
-        true;
-
-      seekBar.value = 0;
-    }
-
-
-    document.getElementById(
-      "time-current"
-    ).innerText =
-      "0:00";
-
-
-    document.getElementById(
-      "time-duration"
-    ).innerText =
-      "--:--";
-
-
-    // ==========================================================
-    // iframeへ次の動画をロード
-    // ==========================================================
-
-    nicoIframe.src =
-      createNicoUrl(
-        videoId
+        "niconico-player"
       );
   }
 
+  if (!nicoIframe) {
+    console.error(
+      "[NicoNico] iframeが見つかりません"
+    );
+    return;
+  }
+
+  nicoCurrentVideoId =
+    videoId;
+
+  nicoPlayerStatus = 0;
+
+  nicoDuration = 0;
+  nicoCurrentTime = 0;
+
+  nicoLoadStartedAt =
+    performance.now();
+
+  nicoLoadCompleteAt = 0;
+
+  console.log(
+    "[NicoNico] 動画ロード開始"
+  );
+
+  console.log(
+    "[NicoNico] video=" +
+    videoId
+  );
+
+  const seekBar =
+    document.getElementById(
+      "seek-bar"
+    );
+
+  if (seekBar) {
+    seekBar.disabled = true;
+    seekBar.value = 0;
+    seekBar.max = 100;
+  }
+
+  document.getElementById(
+    "time-current"
+  ).innerText = "0:00";
+
+  document.getElementById(
+    "time-duration"
+  ).innerText = "--:--";
+
+  nicoIframe.src =
+    createNicoUrl(videoId);
+}
 
   // ============================================================
   // NicoNicoロード完了後UI
@@ -4351,95 +4485,84 @@
 
   function updateNicoUIAfterLoad() {
 
-    const btnToggle =
-      document.getElementById(
-        "btn-toggle"
-      );
+  const btnToggle =
+    document.getElementById("btn-toggle");
 
+  const btnAns =
+    document.getElementById("btn-ans");
 
-    const btnAns =
-      document.getElementById(
-        "btn-ans"
-      );
+  const seekBar =
+    document.getElementById("seek-bar");
 
+  if (!btnToggle) return;
 
-    const seekBar =
-      document.getElementById(
-        "seek-bar"
-      );
+  btnToggle.disabled = false;
+  btnToggle.innerText = "▶ 再生";
+  btnToggle.classList.remove("playing");
 
-
-    if (!btnToggle) {
-      return;
-    }
-
-
-    // ==========================================================
-    // 再生ボタン
-    // ==========================================================
-
-    btnToggle.disabled =
-      false;
-
-
-    btnToggle.innerText =
-      "▶ 再生";
-
-
-    btnToggle.classList.remove(
-      "playing"
-    );
-
-
-    // ==========================================================
-    // 正解ボタン
-    // ==========================================================
-
-    if (btnAns) {
-      btnAns.disabled =
-        false;
-    }
-
-
-    // ==========================================================
-    // シークバー
-    // ==========================================================
-
-    if (seekBar) {
-
-      // NicoNicoでは現在シークを使用しない
-      seekBar.disabled =
-        true;
-
-      seekBar.value =
-        0;
-
-      seekBar.max =
-        100;
-    }
-
-
-    document.getElementById(
-      "time-current"
-    ).innerText =
-      "0:00";
-
-
-    document.getElementById(
-      "time-duration"
-    ).innerText =
-      "--:--";
-
-
-    // ==========================================================
-    // ステータス
-    // ==========================================================
-
-    document.getElementById(
-      "status"
-    ).innerText =
-      `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+  if (btnAns) {
+    btnAns.disabled = false;
   }
+
+  // ==========================================================
+  // シークバー
+  // ==========================================================
+
+  if (seekBar) {
+
+    if (nicoDuration > 0) {
+      seekBar.disabled = false;
+      seekBar.max = nicoDuration;
+      seekBar.value = nicoCurrentTime;
+    } else {
+      seekBar.disabled = true;
+      seekBar.value = 0;
+      seekBar.max = 100;
+    }
+  }
+
+  document.getElementById(
+    "time-current"
+  ).innerText =
+    formatTime(nicoCurrentTime);
+
+  document.getElementById(
+    "time-duration"
+  ).innerText =
+    nicoDuration > 0
+      ? formatTime(nicoDuration)
+      : "--:--";
+
+  // 音量UIも現在状態へ同期
+  const volumeSlider =
+    document.getElementById("volume-slider");
+
+  const volumeText =
+    document.getElementById("volume-text");
+
+  const muteCheckbox =
+    document.getElementById("mute-checkbox");
+
+  if (volumeSlider) {
+    volumeSlider.value =
+      currentVolume;
+  }
+
+  if (volumeText) {
+    volumeText.innerText =
+      `${currentVolume}%`;
+  }
+
+  if (muteCheckbox) {
+    muteCheckbox.checked =
+      isMuted;
+  }
+
+  document.getElementById(
+    "status"
+  ).innerText =
+    `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+}
 
 </script>
 
