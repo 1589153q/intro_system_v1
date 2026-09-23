@@ -299,7 +299,7 @@
   // キャッシュによる古いレスポンスが発生することがあるため、
   // GETだけはこちらで再試行・JSON検証を行う。
   // ============================================================
-  async function fetchGASJson(url, retryCount = 2) {
+  async function fetchGASJsonCors_(url, retryCount = 2) {
 
     let lastError = null;
 
@@ -4700,6 +4700,59 @@ if (currentSource === "niconico") {
   ).innerText =
     `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
 }
+// GAS ContentServiceのJSON応答はブラウザーから直接fetchできないため、GETはJSONPで取得する。
+  async function fetchGASJson(url, retryCount = 2) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      try {
+        const data = await new Promise((resolve, reject) => {
+          const callbackName = "__gasJsonp_" + Date.now() + "_" + attempt + "_" + Math.random().toString(36).slice(2);
+          const script = document.createElement("script");
+          const requestUrl = new URL(url, window.location.href);
+          let settled = false;
+
+          const cleanup = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            delete window[callbackName];
+            script.remove();
+          };
+
+          const timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error("GAS JSONP応答がタイムアウトしました"));
+          }, 20000);
+
+          window[callbackName] = payload => {
+            cleanup();
+            resolve(payload);
+          };
+
+          script.onerror = () => {
+            cleanup();
+            reject(new Error("GAS JSONPスクリプトを読み込めませんでした"));
+          };
+
+          requestUrl.searchParams.set("callback", callbackName);
+          requestUrl.searchParams.set("_client_ts", Date.now() + "_" + attempt);
+          script.src = requestUrl.toString();
+          document.head.appendChild(script);
+        });
+
+        return data;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[GAS] JSONP失敗 ${attempt + 1}/${retryCount + 1}:`, err);
+        if (attempt < retryCount) {
+          await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+        }
+      }
+    }
+
+    throw lastError || new Error("GASへの接続に失敗しました");
+  }
 
 </script>
 
