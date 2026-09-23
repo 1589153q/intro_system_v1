@@ -4166,22 +4166,23 @@ if (currentSource === "niconico") {
       nicoIframe.remove();
     }
 
-    // 先読みiframeは1px・透明・画面外にしてあるため、
-    // そのまま切り替えると「2曲目以降は動画があるのに見えない」状態になる。
-    // アクティブ化した時点で通常表示用のスタイルへ戻す。
-    nicoPreloadIframe.id = "niconico-player";
-    nicoPreloadIframe.width = "640";
-    nicoPreloadIframe.height = "360";
-    nicoPreloadIframe.style.position = "static";
-    nicoPreloadIframe.style.width = "640px";
-    nicoPreloadIframe.style.height = "360px";
-    nicoPreloadIframe.style.opacity = "1";
-    nicoPreloadIframe.style.pointerEvents = "auto";
-    nicoPreloadIframe.style.left = "";
-    nicoPreloadIframe.style.top = "";
-    nicoPreloadIframe.style.border = "0";
+    // 先読みiframeは非表示状態なので、表示用のサイズ・位置へ戻す
+    const iframe = nicoPreloadIframe;
 
-    nicoIframe = nicoPreloadIframe;
+    iframe.id = "niconico-player";
+    iframe.width = "640";
+    iframe.height = "360";
+    iframe.style.position = "static";
+    iframe.style.width = "640px";
+    iframe.style.height = "360px";
+    iframe.style.opacity = "1";
+    iframe.style.pointerEvents = "auto";
+    iframe.style.left = "";
+    iframe.style.top = "";
+    iframe.style.border = "0";
+    iframe.style.display = "block";
+
+    nicoIframe = iframe;
     nicoActivePlayerId =
       nicoPreloadPlayerId;
 
@@ -4194,7 +4195,7 @@ if (currentSource === "niconico") {
     nicoCurrentTime = nicoPreloadCurrentTime;
     isPlaying = false;
 
-    // 先読みiframeをアクティブ化したので、次の先読み枠を空にする
+    // 先読み状態をクリア
     nicoPreloadIframe = null;
     nicoPreloadVideoId = "";
     nicoPreloadPlayerId = "";
