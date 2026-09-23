@@ -2465,13 +2465,7 @@ function onSeekChange() {
     }
 
 
-    listEl.innerHTML =
-      quizData
-        .map(
-          item =>
-            `<li>${item.videoTitle || '無題'} (${item.artist || '不明'})</li>`
-        )
-        .join('');
+    const fragment = document.createDocumentFragment(); quizData.forEach(item => { const li = document.createElement('li'); li.textContent = (item.videoTitle || '無題') + ' (' + (item.artist || '不明') + ')'; fragment.appendChild(li); }); listEl.replaceChildren(fragment);
   }
 
 
