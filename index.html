@@ -419,6 +419,8 @@
   const dataCache = {};
   let availableSheetNames = [];
   let existingTags = new Set();
+  let sheetMetadataLoaded = false;
+  let sheetMetadataLoading = false;
   let quizData = [];
   let currentIndex = -1;
   let player;
@@ -457,6 +459,8 @@
 
   let isPlaying = false;
   let actualStartSec = 0;
+  let nicoStartPositionPending = false;
+  let nicoStartPositionApplied = false;
   let seekTimer = null;
   let isUserSeeking = false;
   let autoSkipTimeout = null;
@@ -559,7 +563,9 @@
 
     // 動画長を取得した後、選択中の再生モードに応じて
     // 開始位置を決定する。
-    prepareNicoStartPosition();
+    if (nicoDuration > 0) {
+      prepareNicoStartPosition();
+    }
 
     // 現在曲のロードが終わったら次曲を先読み開始
     preloadNextNicoVideo();
@@ -619,6 +625,15 @@
 
     if (metaDurationSec !== null) {
       nicoDuration = metaDurationSec;
+
+      // loadCompleteとduration metadataの到着順は一定ではない。
+      if (
+        nicoStartPositionPending &&
+        !nicoStartPositionApplied &&
+        nicoDuration > 0
+      ) {
+        prepareNicoStartPosition();
+      }
     }
 
     if (metaCurrentTimeSec !== null) {
@@ -786,6 +801,22 @@
   // ============================================================
   // YouTube iframe API
   // ============================================================
+
+  // シート情報はYouTube APIとは独立して取得する。
+  // リロード直後にYouTube APIの初期化が遅れても止まらない。
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => fetchSheetMetadata(),
+      { once: true }
+    );
+  } else {
+    setTimeout(
+      () => fetchSheetMetadata(),
+      0
+    );
+  }
+
 
   function onYouTubeIframeAPIReady() {
 
@@ -1372,51 +1403,73 @@ function onSeekChange() {
   // シート一覧取得
   // ============================================================
 
-  function fetchSheetMetadata() {
+  async function fetchSheetMetadata(force = false) {
+
+    // YouTube APIとは独立してシート情報を取得する。
+    if (sheetMetadataLoading && !force) return;
+    if (sheetMetadataLoaded && !force) return;
 
     const statusEl =
-      document.getElementById(
-        'status'
-      );
-
+      document.getElementById("status");
 
     if (statusEl) {
       statusEl.innerText =
         "シート情報を取得中...";
     }
 
+    sheetMetadataLoading = true;
 
-    fetchGASJson(GAS_URL)
-
-      .then(resData => {
-
-        availableSheetNames =
-          resData.sheetNames || [];
-
-
-        updateSheetSelectOptions(
-          availableSheetNames
+    try {
+      const resData =
+        await fetchGASJson(
+          GAS_URL,
+          3
         );
 
+      availableSheetNames =
+        Array.isArray(resData.sheetNames)
+          ? resData.sheetNames
+          : [];
 
-        if (statusEl) {
-          statusEl.innerText =
-            "シート一覧を取得しました。選択して「フィルター適用」を押してください。";
-        }
+      if (!availableSheetNames.length) {
+        throw new Error(
+          "GASからシート一覧を取得できませんでした"
+        );
+      }
 
-      })
+      updateSheetSelectOptions(
+        availableSheetNames
+      );
 
-      .catch(err => {
+      sheetMetadataLoaded = true;
 
-        if (statusEl) {
-          statusEl.innerText =
-            "シート情報の取得に失敗しました。";
-        }
+      if (statusEl) {
+        statusEl.innerText =
+          "シート一覧を取得しました。選択して「フィルター適用」を押してください。";
+      }
 
-        console.error(err);
+    } catch (err) {
 
-        updateSheetSelectOptions([]);
-      });
+      console.error(
+        "[GAS] シート一覧取得失敗:",
+        err
+      );
+
+      if (statusEl) {
+        statusEl.innerText =
+          "シート情報の取得に失敗しました。再取得を試みています...";
+      }
+
+      updateSheetSelectOptions([]);
+
+      setTimeout(
+        () => fetchSheetMetadata(true),
+        2500
+      );
+
+    } finally {
+      sheetMetadataLoading = false;
+    }
   }
 
 
@@ -4138,11 +4191,14 @@ if (currentSource === "niconico") {
       Number(nicoDuration) || 0;
 
     if (duration <= 0) {
-      console.warn(
-        "[NicoNico] duration未取得のため開始位置を0秒にします"
+      console.log(
+        "[NicoNico] duration待ち。完全ラントロ準備を保留します"
       );
-      actualStartSec = 0;
-      updateNicoUIAfterLoad();
+      nicoStartPositionPending = true;
+      return;
+    }
+
+    if (nicoStartPositionApplied) {
       return;
     }
 
@@ -4204,6 +4260,9 @@ if (currentSource === "niconico") {
     if (seekBar) {
       seekBar.disabled = true;
     }
+
+    nicoStartPositionPending = false;
+    nicoStartPositionApplied = true;
 
     // NicoNico APIのseekはミリ秒
     sendNicoPlayerCommand(
@@ -4287,6 +4346,10 @@ if (currentSource === "niconico") {
 
   nicoDuration = 0;
   nicoCurrentTime = 0;
+
+  nicoStartPositionPending =
+    getSelectedPlayMode() === "fullRandom";
+  nicoStartPositionApplied = false;
 
   nicoLoadStartedAt =
     performance.now();
@@ -4514,6 +4577,10 @@ if (currentSource === "niconico") {
     nicoDuration = nicoPreloadDuration;
     nicoCurrentTime = nicoPreloadCurrentTime;
     isPlaying = false;
+
+    nicoStartPositionPending =
+      getSelectedPlayMode() === "fullRandom";
+    nicoStartPositionApplied = false;
 
     // 先読みiframeをアクティブ化したので、次の先読み枠を空にする
     nicoPreloadIframe = null;
