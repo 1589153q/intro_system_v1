@@ -291,6 +291,129 @@
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
   const GAS_URL = "https://script.google.com/macros/s/AKfycby-lYg8SxOmSTuRNi86ofT5YzoCiAi2OIHkoYqT_hlX4cVeNe5FqO9wNGRpzQJkC0k/exec";
+
+  // ============================================================
+  // GAS GET通信 共通処理
+  //
+  // Apps ScriptのWebアプリはリダイレクトや一時的な通信失敗、
+  // キャッシュによる古いレスポンスが発生することがあるため、
+  // GETだけはこちらで再試行・JSON検証を行う。
+  // ============================================================
+  async function fetchGASJson(url, retryCount = 2) {
+
+    let lastError = null;
+
+    for (
+      let attempt = 0;
+      attempt <= retryCount;
+      attempt++
+    ) {
+
+      const controller =
+        new AbortController();
+
+      const timeoutId =
+        setTimeout(
+          () => controller.abort(),
+          20000
+        );
+
+      try {
+
+        // GETではキャッシュを避ける。
+        const separator =
+          url.includes("?")
+            ? "&"
+            : "?";
+
+        const requestUrl =
+          url +
+          separator +
+          "_client_ts=" +
+          Date.now() +
+          "_" +
+          attempt;
+
+        const response =
+          await fetch(
+            requestUrl,
+            {
+              method: "GET",
+              cache: "no-store",
+              redirect: "follow",
+              signal: controller.signal
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "GAS HTTP " +
+            response.status +
+            " " +
+            response.statusText
+          );
+        }
+
+        const text =
+          await response.text();
+
+        if (!text || !text.trim()) {
+          throw new Error(
+            "GASから空のレスポンスが返りました"
+          );
+        }
+
+        let data;
+
+        try {
+          data =
+            JSON.parse(text);
+        } catch (jsonError) {
+
+          console.error(
+            "[GAS] JSON解析失敗。先頭200文字:",
+            text.slice(0, 200)
+          );
+
+          throw new Error(
+            "GASのレスポンスがJSONではありません"
+          );
+        }
+
+        return data;
+
+      } catch (err) {
+
+        lastError = err;
+
+        console.warn(
+          `[GAS] GET失敗 ${attempt + 1}/${retryCount + 1}:`,
+          err
+        );
+
+        if (
+          attempt < retryCount
+        ) {
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                700 * (attempt + 1)
+              )
+          );
+        }
+
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    throw lastError ||
+      new Error(
+        "GASへの接続に失敗しました"
+      );
+  }
+
   const COMMENT_PASSWORD = "1234";
 
   const dataCache = {};
@@ -1263,11 +1386,7 @@ function onSeekChange() {
     }
 
 
-    fetch(GAS_URL)
-
-      .then(res =>
-        res.json()
-      )
+    fetchGASJson(GAS_URL)
 
       .then(resData => {
 
@@ -1641,12 +1760,8 @@ function onSeekChange() {
           `${GAS_URL}?sheets=${encodeURIComponent(uncachedSheets.join(','))}`;
 
 
-        const res =
-          await fetch(fetchUrl);
-
-
         const resData =
-          await res.json();
+          await fetchGASJson(fetchUrl);
 
 
         uncachedSheets.forEach(
