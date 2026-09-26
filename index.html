@@ -335,13 +335,22 @@
   let actualStartSec = 0;
   let nicoStartPositionPending = false;
   let nicoStartPositionApplied = false;
+  let nicoHasStartedPlayback = false; // その問題で一度でも再生を開始したか（再開時のシークスキップ用）
+  let nicoInitialSeekDone = false;     // 初回ラントロシークが完了したか
+  let nicoSeekRetryTimers = [];        // 初回シーク再送タイマー配列
   let seekTimer = null;
   let isUserSeeking = false;
   let autoSkipTimeout = null;
 
   let currentVolume = 100;
   let isMuted = false;
-  let nicoSeekAppliedOnPlay = false;
+
+  function clearNicoSeekRetryTimers() {
+    if (Array.isArray(nicoSeekRetryTimers)) {
+      nicoSeekRetryTimers.forEach(id => clearTimeout(id));
+    }
+    nicoSeekRetryTimers = [];
+  }
 
   function normalizeNicoSec(val) {
     if (val === undefined || val === null) return null;
@@ -517,15 +526,23 @@
     if (metaCurrentTimeSec !== null) {
       nicoCurrentTime = metaCurrentTimeSec;
 
-      // iframe直接クリック等で再生開始された際、先頭付近ならラントロ開始秒へ自動ジャンプ
+      // 現在位置が開始秒付近（±3秒以内）に到達したら初回シーク完了と判定
+      if (actualStartSec > 0 && Math.abs(nicoCurrentTime - actualStartSec) < 3) {
+        if (!nicoInitialSeekDone) {
+          console.log("[NicoNico] 初回シーク到達完了検知:", nicoCurrentTime);
+          nicoInitialSeekDone = true;
+          clearNicoSeekRetryTimers();
+        }
+      }
+
+      // 再生中かつ初回シーク未完了で、現在位置が先頭（2秒未満かつ開始秒が3秒以上）にいる場合、自動シーク
       if (
         isPlaying &&
-        actualStartSec > 2 &&
-        nicoCurrentTime < 2 &&
-        !nicoSeekAppliedOnPlay
+        actualStartSec > 3 &&
+        !nicoInitialSeekDone &&
+        nicoCurrentTime < 2
       ) {
-        nicoSeekAppliedOnPlay = true;
-        console.log("[NicoNico] metadata再生検出: 開始秒へ自動シーク:", actualStartSec);
+        console.log("[NicoNico] metadata再生中・先頭位置検出: 開始秒へ自動シーク:", actualStartSec);
         sendNicoPlayerCommand("seek", {
           time: Math.round(actualStartSec * 1000)
         });
@@ -629,22 +646,25 @@
 
       btn.classList.add("playing");
 
-      // 完全ラントロや指定秒数で、再生開始時に現在秒数が先頭（2秒未満）かつ未シークならシークを強制適用
-      // （iframeを直接クリックして再生開始した場合の補正）
+      // 一度再生が開始されたことを記録（一時停止からの再開時にシークをスキップするため）
+      nicoHasStartedPlayback = true;
+
+      // 完全ラントロや指定秒数で、まだ初回シーク未完了かつ現在位置が開始位置より手前の場合
       if (
         actualStartSec > 2 &&
-        nicoCurrentTime < 2 &&
-        !nicoSeekAppliedOnPlay
+        !nicoInitialSeekDone &&
+        nicoCurrentTime < actualStartSec - 2
       ) {
-        nicoSeekAppliedOnPlay = true;
-        console.log("[NicoNico] 再生開始検出: 開始秒へ自動シーク:", actualStartSec);
+        console.log("[NicoNico] playerStatusChange:2 再生開始検出: 開始秒へシーク:", actualStartSec);
         sendNicoPlayerCommand("seek", {
           time: Math.round(actualStartSec * 1000)
         });
         setTimeout(() => {
-          sendNicoPlayerCommand("seek", {
-            time: Math.round(actualStartSec * 1000)
-          });
+          if (!nicoInitialSeekDone) {
+            sendNicoPlayerCommand("seek", {
+              time: Math.round(actualStartSec * 1000)
+            });
+          }
         }, 180);
       }
 
@@ -2815,6 +2835,7 @@ if (currentSource === "niconico") {
       );
 
       isPlaying = false;
+      clearNicoSeekRetryTimers();
 
       if (btn) {
         btn.innerText = "▶ 再生";
@@ -2828,9 +2849,10 @@ if (currentSource === "niconico") {
       return;
     }
 
-    // 一時停止 / ロード完了 / 読み込み中から再生開始
+    // 停止中から再生開始
     console.log(
-      "[NicoNico] play"
+      "[NicoNico] play, hasStarted=",
+      nicoHasStartedPlayback
     );
 
     isPlaying = true;
@@ -2856,44 +2878,58 @@ if (currentSource === "niconico") {
       }
     );
 
-    // 開始位置指定（完全ラントロや指定秒数）がある場合、再生直前にもシーク（ms）
-    if (actualStartSec > 0) {
+    // 【重要】初回の再生時のみラントロ開始秒へのシークを実行
+    // 一時停止からの再開（nicoHasStartedPlayback === true）ではシークせずそのまま続きから再生！
+    if (!nicoHasStartedPlayback) {
+      nicoHasStartedPlayback = true;
+
+      if (actualStartSec > 0) {
+        console.log(
+          "[NicoNico] 初回再生: 開始位置へシーク送信:",
+          actualStartSec
+        );
+        sendNicoPlayerCommand(
+          "seek",
+          {
+            time: Math.round(actualStartSec * 1000)
+          }
+        );
+      }
+
       sendNicoPlayerCommand(
-        "seek",
-        {
-          time: Math.round(actualStartSec * 1000)
-        }
+        "play"
       );
-    }
 
-    sendNicoPlayerCommand(
-      "play"
-    );
-
-    // 再生開始直後（150ms後、350ms後）に念のためもう一度シークを送信し、
-    // プレイヤーが0秒から再生開始してしまうのを防ぐ
-    if (actualStartSec > 0) {
-      setTimeout(() => {
-        if (isPlaying) {
-          sendNicoPlayerCommand(
-            "seek",
-            {
-              time: Math.round(actualStartSec * 1000)
+      if (actualStartSec > 0) {
+        clearNicoSeekRetryTimers();
+        // プレイヤーの初期化・ロード待機時間の揺らぎを確実に吸収するため複数回シーク送信
+        const delays = [150, 400, 800, 1300];
+        delays.forEach(delay => {
+          const tid = setTimeout(() => {
+            if (isPlaying && !nicoInitialSeekDone) {
+              console.log(
+                `[NicoNico] 再生開始シーク再送 (${delay}ms):`,
+                actualStartSec
+              );
+              sendNicoPlayerCommand(
+                "seek",
+                {
+                  time: Math.round(actualStartSec * 1000)
+                }
+              );
             }
-          );
-        }
-      }, 150);
-
-      setTimeout(() => {
-        if (isPlaying) {
-          sendNicoPlayerCommand(
-            "seek",
-            {
-              time: Math.round(actualStartSec * 1000)
-            }
-          );
-        }
-      }, 350);
+          }, delay);
+          nicoSeekRetryTimers.push(tid);
+        });
+      }
+    } else {
+      // 一時停止からの再開（Resume）: シークを行わずそのまま再生
+      console.log(
+        "[NicoNico] 一時停止位置から再開 (Resume)"
+      );
+      sendNicoPlayerCommand(
+        "play"
+      );
     }
 
     return;
@@ -3938,19 +3974,10 @@ if (currentSource === "niconico") {
 
     nicoStartPositionPending = false;
     nicoStartPositionApplied = true;
+    nicoInitialSeekDone = false;
 
-    // NicoNico APIのseekはミリ秒（ms）で送信！
-    if (actualStartSec > 0) {
-      sendNicoPlayerCommand(
-        "seek",
-        {
-          time: Math.round(actualStartSec * 1000)
-        }
-      );
-    }
-
-    nicoCurrentTime =
-      actualStartSec;
+    // 出題時点ではまだ再生前のため0秒
+    nicoCurrentTime = 0;
 
     // UIを即時準備完了にする（待機せずボタンを有効化）
     updateNicoUIAfterLoad();
@@ -4017,7 +4044,9 @@ if (currentSource === "niconico") {
 
   nicoStartPositionPending = true;
   nicoStartPositionApplied = false;
-  nicoSeekAppliedOnPlay = false;
+  nicoHasStartedPlayback = false;
+  nicoInitialSeekDone = false;
+  clearNicoSeekRetryTimers();
 
   nicoLoadStartedAt =
     performance.now();
@@ -4251,7 +4280,9 @@ if (currentSource === "niconico") {
 
     nicoStartPositionPending = true;
     nicoStartPositionApplied = false;
-    nicoSeekAppliedOnPlay = false;
+    nicoHasStartedPlayback = false;
+    nicoInitialSeekDone = false;
+    clearNicoSeekRetryTimers();
 
     // 先読みiframeをアクティブ化したので、次の先読み枠を空にする
     nicoPreloadIframe = null;
