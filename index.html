@@ -341,17 +341,15 @@
 
   let currentVolume = 100;
   let isMuted = false;
+  let nicoSeekAppliedOnPlay = false;
 
   function normalizeNicoSec(val) {
     if (val === undefined || val === null) return null;
     const num = Number(val);
     if (!Number.isFinite(num) || num < 0) return null;
-    // NicoNico埋め込みAPIのtime/durationは秒単位
-    // 10000以上の巨大な値（約2.8時間超）のみmsとみなして秒に変換するセーフティ
-    if (num >= 10000) {
-      return num / 1000;
-    }
-    return num;
+    // NicoNico埋め込みAPIのcurrentTime / durationは常にミリ秒（ms）で返る。
+    // アプリ内部（シークバー、表示、ラントロ秒数）は「秒」で統一するため、常に1000で割って秒にする。
+    return num / 1000;
   }
 
 
@@ -499,6 +497,14 @@
     if (metaDurationSec !== null) {
       nicoDuration = metaDurationSec;
 
+      // 決定済みの開始秒が実際の動画長を超えている場合の安全補正
+      if (nicoStartPositionApplied && actualStartSec >= nicoDuration && nicoDuration > 0) {
+        actualStartSec = Math.max(0, nicoDuration - 1);
+        if (actualStartSec > 0) {
+          sendNicoPlayerCommand("seek", { time: Math.round(actualStartSec * 1000) });
+        }
+      }
+
       // loadCompleteとduration metadataの到着順は一定ではない。
       if (
         nicoStartPositionPending &&
@@ -510,6 +516,20 @@
 
     if (metaCurrentTimeSec !== null) {
       nicoCurrentTime = metaCurrentTimeSec;
+
+      // iframe直接クリック等で再生開始された際、先頭付近ならラントロ開始秒へ自動ジャンプ
+      if (
+        isPlaying &&
+        actualStartSec > 2 &&
+        nicoCurrentTime < 2 &&
+        !nicoSeekAppliedOnPlay
+      ) {
+        nicoSeekAppliedOnPlay = true;
+        console.log("[NicoNico] metadata再生検出: 開始秒へ自動シーク:", actualStartSec);
+        sendNicoPlayerCommand("seek", {
+          time: Math.round(actualStartSec * 1000)
+        });
+      }
     }
 
     if (
@@ -608,6 +628,25 @@
         "■ 停止 (一時停止)";
 
       btn.classList.add("playing");
+
+      // 完全ラントロや指定秒数で、再生開始時に現在秒数が先頭（2秒未満）かつ未シークならシークを強制適用
+      // （iframeを直接クリックして再生開始した場合の補正）
+      if (
+        actualStartSec > 2 &&
+        nicoCurrentTime < 2 &&
+        !nicoSeekAppliedOnPlay
+      ) {
+        nicoSeekAppliedOnPlay = true;
+        console.log("[NicoNico] 再生開始検出: 開始秒へ自動シーク:", actualStartSec);
+        sendNicoPlayerCommand("seek", {
+          time: Math.round(actualStartSec * 1000)
+        });
+        setTimeout(() => {
+          sendNicoPlayerCommand("seek", {
+            time: Math.round(actualStartSec * 1000)
+          });
+        }, 180);
+      }
 
       return;
     }
@@ -1241,7 +1280,7 @@ function onSeekChange() {
     sendNicoPlayerCommand(
       "seek",
       {
-        time: targetSec
+        time: Math.round(targetSec * 1000)
       }
     );
 
@@ -2817,12 +2856,12 @@ if (currentSource === "niconico") {
       }
     );
 
-    // 開始位置指定（完全ラントロや指定秒数）がある場合、再生直前にもシーク
+    // 開始位置指定（完全ラントロや指定秒数）がある場合、再生直前にもシーク（ms）
     if (actualStartSec > 0) {
       sendNicoPlayerCommand(
         "seek",
         {
-          time: actualStartSec
+          time: Math.round(actualStartSec * 1000)
         }
       );
     }
@@ -2831,19 +2870,30 @@ if (currentSource === "niconico") {
       "play"
     );
 
-    // 再生開始直後（150ms後）に念のためもう一度シークを送信し、
-    // 0秒から再生開始してしまうのを防ぐ
+    // 再生開始直後（150ms後、350ms後）に念のためもう一度シークを送信し、
+    // プレイヤーが0秒から再生開始してしまうのを防ぐ
     if (actualStartSec > 0) {
       setTimeout(() => {
         if (isPlaying) {
           sendNicoPlayerCommand(
             "seek",
             {
-              time: actualStartSec
+              time: Math.round(actualStartSec * 1000)
             }
           );
         }
       }, 150);
+
+      setTimeout(() => {
+        if (isPlaying) {
+          sendNicoPlayerCommand(
+            "seek",
+            {
+              time: Math.round(actualStartSec * 1000)
+            }
+          );
+        }
+      }, 350);
     }
 
     return;
@@ -3831,23 +3881,23 @@ if (currentSource === "niconico") {
 
 
   function prepareNicoStartPosition() {
-    const duration =
+    let duration =
       Number(nicoDuration) || 0;
 
     const mode =
       getSelectedPlayMode();
 
-    // 完全ラントロの場合はdurationが必要
-    if (duration <= 0 && mode === "fullRandom") {
-      console.log(
-        "[NicoNico] duration待ち。完全ラントロ準備を保留します"
-      );
-      nicoStartPositionPending = true;
+    if (nicoStartPositionApplied) {
       return;
     }
 
-    if (nicoStartPositionApplied) {
-      return;
+    // もしdurationがまだ未着の場合（未再生iframe）、
+    // 完全ラントロでも標準的なボカロ曲の動画長（210秒＝3分30秒）を仮置きして即座に開始位置を決定！
+    // これにより、動画クリックを待たずに即座に「準備完了！」になり、「▶ 再生」ボタンを押せるようになる。
+    let isEstimatedDuration = false;
+    if (duration <= 0) {
+      duration = 210;
+      isEstimatedDuration = true;
     }
 
     if (mode === "fullRandom") {
@@ -3866,18 +3916,14 @@ if (currentSource === "niconico") {
       actualStartSec = 0;
     }
 
-    if (duration > 0) {
-      actualStartSec =
-        Math.max(
-          0,
-          Math.min(
-            actualStartSec,
-            Math.max(0, duration - 0.1)
-          )
-        );
-    } else {
-      actualStartSec = Math.max(0, actualStartSec);
-    }
+    actualStartSec =
+      Math.max(
+        0,
+        Math.min(
+          actualStartSec,
+          Math.max(0, duration - 0.5)
+        )
+      );
 
     console.log(
       "[NicoNico] 開始位置決定:",
@@ -3885,86 +3931,55 @@ if (currentSource === "niconico") {
       mode,
       "duration=",
       duration,
+      isEstimatedDuration ? "(仮定値)" : "(実測値)",
       "start=",
       actualStartSec
     );
 
-    // 準備中は再生ボタンを押せないようにする
-    const btnToggle =
-      document.getElementById(
-        "btn-toggle"
-      );
-
-    const seekBar =
-      document.getElementById(
-        "seek-bar"
-      );
-
-    if (btnToggle) {
-      btnToggle.disabled = true;
-      btnToggle.innerText =
-        "⏳ 開始位置を準備中";
-      btnToggle.classList.remove(
-        "playing"
-      );
-    }
-
-    if (seekBar) {
-      seekBar.disabled = true;
-    }
-
     nicoStartPositionPending = false;
     nicoStartPositionApplied = true;
 
-    // NicoNico APIのseekは「秒」単位
-    sendNicoPlayerCommand(
-      "seek",
-      {
-        time: actualStartSec
-      }
-    );
+    // NicoNico APIのseekはミリ秒（ms）で送信！
+    if (actualStartSec > 0) {
+      sendNicoPlayerCommand(
+        "seek",
+        {
+          time: Math.round(actualStartSec * 1000)
+        }
+      );
+    }
 
     nicoCurrentTime =
       actualStartSec;
 
-    // seekの反映を待ってから必ず停止。
-    // ユーザーが「再生」を押すまでは音を出さない。
-    setTimeout(() => {
-      sendNicoPlayerCommand(
-        "pause"
+    // UIを即時準備完了にする（待機せずボタンを有効化）
+    updateNicoUIAfterLoad();
+
+    const statusEl =
+      document.getElementById(
+        "status"
       );
 
-      nicoPlayerStatus = 3;
-      isPlaying = false;
-
-      updateNicoUIAfterLoad();
-
-      const statusEl =
-        document.getElementById(
-          "status"
-        );
-
-      if (statusEl) {
-        if (mode === "fullRandom") {
-          statusEl.innerText =
-            `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
-            `（開始 ${actualStartSec.toFixed(1)} 秒）`;
-        } else if (mode === "customSec" && actualStartSec > 0) {
-          statusEl.innerText =
-            `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
-            `（指定 ${actualStartSec.toFixed(1)} 秒）`;
-        } else {
-          statusEl.innerText =
-            `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
-        }
+    if (statusEl) {
+      if (mode === "fullRandom") {
+        statusEl.innerText =
+          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
+          `（開始 ${actualStartSec.toFixed(1)} 秒）`;
+      } else if (mode === "customSec" && actualStartSec > 0) {
+        statusEl.innerText =
+          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
+          `（指定 ${actualStartSec.toFixed(1)} 秒）`;
+      } else {
+        statusEl.innerText =
+          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
       }
+    }
 
-      console.log(
-        "[NicoNico] 準備完了:",
-        actualStartSec,
-        "sec"
-      );
-    }, 250);
+    console.log(
+      "[NicoNico] 準備完了:",
+      actualStartSec,
+      "sec"
+    );
   }
 
 
@@ -4002,6 +4017,7 @@ if (currentSource === "niconico") {
 
   nicoStartPositionPending = true;
   nicoStartPositionApplied = false;
+  nicoSeekAppliedOnPlay = false;
 
   nicoLoadStartedAt =
     performance.now();
@@ -4045,26 +4061,8 @@ if (currentSource === "niconico") {
   nicoIframe.src =
     createNicoUrl(videoId);
 
-  // もし3.5秒経過してもAPI通信待機で準備完了しない場合のフォールバック
-  setTimeout(() => {
-    if (
-      currentSource === "niconico" &&
-      nicoCurrentVideoId === videoId &&
-      !nicoStartPositionApplied
-    ) {
-      console.log(
-        "[NicoNico] ロード待機タイムアウトによるUI準備完了フォールバック"
-      );
-      prepareNicoStartPosition();
-      updateNicoUIAfterLoad();
-      const statusEl =
-        document.getElementById("status");
-      if (statusEl && statusEl.innerText.includes("準備中")) {
-        statusEl.innerText =
-          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
-      }
-    }
-  }, 3500);
+  // 出題時に即座に開始位置を決定し、再生ボタンを有効化する
+  prepareNicoStartPosition();
 }
 
   // ============================================================
@@ -4253,6 +4251,7 @@ if (currentSource === "niconico") {
 
     nicoStartPositionPending = true;
     nicoStartPositionApplied = false;
+    nicoSeekAppliedOnPlay = false;
 
     // 先読みiframeをアクティブ化したので、次の先読み枠を空にする
     nicoPreloadIframe = null;
