@@ -2202,79 +2202,38 @@ function onSeekChange() {
     statusEl.innerText =
       "再生リストの情報を取得中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "syncPlaylistAndGetQuiz",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-          action:
-            "syncPlaylistAndGetQuiz",
-
-          playlistId:
-            playlistId,
-
-          genreTags:
-            genreTags
-        })
-      }
+        playlistId: playlistId,
+        genreTags: genreTags
+      },
+      0
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(resData => {
-
         if (
-          resData.status ===
-            "success" &&
-          Array.isArray(
-            resData.data
-          ) &&
+          resData.status === "success" &&
+          Array.isArray(resData.data) &&
           resData.data.length > 0
         ) {
-
-          quizData =
-            resData.data;
-
+          quizData = resData.data;
           currentIndex = -1;
-
-
           statusEl.innerText =
             `同期完了！ ${quizData.length} 件の動画を出題対象として読み込みました。`;
-
-
-          document.getElementById(
-            'status'
-          ).innerText =
+          document.getElementById('status').innerText =
             `【Generalシート(再生リスト同期)】 全 ${quizData.length} 問 準備完了！`;
-
-
           updateNavigationButtons();
-
           renderSongList();
-
-
-          delete dataCache[
-            "General"
-          ];
-
+          delete dataCache["General"];
         } else {
-
           statusEl.innerText =
             "同期に失敗したか、対象の動画が見つかりませんでした。";
         }
-
       })
-
       .catch(err => {
-
         statusEl.innerText =
-          "通信エラーが発生しました。";
-
-        console.error(err);
+          "通信エラー: " + (err.message || "取得に失敗しました");
+        console.error("[GAS] プレイリスト同期エラー:", err);
       });
   }
 
@@ -3256,48 +3215,26 @@ if (currentSource === "niconico") {
     statusEl.innerText =
       "書き換え保存中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "updateVideoId",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-          sheetName:
-            current.sheetName,
-
-          rowIndex:
-            current.rowIndex,
-
-          youtubeId:
-            newYoutubeId
-        })
-      }
+        sheetName: current.sheetName,
+        rowIndex: current.rowIndex,
+        youtubeId: newYoutubeId
+      },
+      1
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(data => {
-
-        if (
-          data.status ===
-          "success"
-        ) {
-
-          current.youtubeId =
-            newYoutubeId;
-
-
-          statusEl.innerText =
-            "代表IDを書き換えました！";
-
+        if (data.status === "success") {
+          current.youtubeId = newYoutubeId;
+          statusEl.innerText = "代表IDを書き換えました！";
         } else {
-
-          statusEl.innerText =
-            "保存失敗";
+          statusEl.innerText = "保存失敗: " + (data.message || "不明なエラー");
         }
+      })
+      .catch(err => {
+        statusEl.innerText = "保存失敗: " + (err.message || "通信エラー");
+        console.error("[GAS] 代表ID保存エラー:", err);
       });
   }
 
@@ -3338,48 +3275,26 @@ if (currentSource === "niconico") {
     statusEl.innerText =
       "保存中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "saveCustomStartSec",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-          sheetName:
-            current.sheetName,
-
-          rowIndex:
-            current.rowIndex,
-
-          customStartSec:
-            newSec
-        })
-      }
+        sheetName: current.sheetName,
+        rowIndex: current.rowIndex,
+        customStartSec: newSec !== null ? newSec : ""
+      },
+      1
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(data => {
-
-        if (
-          data.status ===
-          "success"
-        ) {
-
-          current.customStartSec =
-            newSec;
-
-
-          statusEl.innerText =
-            "保存しました！";
-
+        if (data.status === "success") {
+          current.customStartSec = newSec;
+          statusEl.innerText = "秒数を保存しました！";
         } else {
-
-          statusEl.innerText =
-            "保存失敗";
+          statusEl.innerText = "保存失敗: " + (data.message || "不明なエラー");
         }
+      })
+      .catch(err => {
+        statusEl.innerText = "保存失敗: " + (err.message || "通信エラー");
+        console.error("[GAS] 秒数保存エラー:", err);
       });
   }
 
@@ -3414,48 +3329,27 @@ if (currentSource === "niconico") {
     statusEl.innerText =
       "保存中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "saveComment",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-          sheetName:
-            current.sheetName,
-
-          rowIndex:
-            current.rowIndex,
-
-          comment:
-            newComment
-        })
-      }
+        sheetName: current.sheetName,
+        rowIndex: current.rowIndex,
+        comment: newComment
+      },
+      1
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(data => {
-
-        if (
-          data.status ===
-          "success"
-        ) {
-
-          current.comment =
-            newComment;
-
-
-          statusEl.innerText =
-            "保存しました！";
-
+        if (data.status === "success") {
+          current.comment = newComment;
+          statusEl.innerText = "保存しました！";
         } else {
-
-          statusEl.innerText =
-            "保存失敗";
+          statusEl.innerText = "保存失敗: " + (data.message || "不明なエラー");
         }
+      })
+      .catch(err => {
+        // コメント本文はログに出力しない（機密性保護）
+        statusEl.innerText = "保存失敗: " + (err.message || "通信エラー");
+        console.error("[GAS] コメント保存エラー:", err.message);
       });
   }
 
@@ -3498,125 +3392,51 @@ if (currentSource === "niconico") {
     statusEl.innerText =
       "無効化中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "disableRow",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-          action:
-            "disableRow",
-
-          sheetName:
-            current.sheetName,
-
-          rowIndex:
-            current.rowIndex
-        })
-      }
+        sheetName: current.sheetName,
+        rowIndex: current.rowIndex
+      },
+      1
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(data => {
-
-        if (
-          data.status ===
-          "success"
-        ) {
-
+        if (data.status === "success") {
           statusEl.innerText =
             "無効化しました（DB非表示）";
 
-
-          if (
-            dataCache[
-              current.sheetName
-            ]
-          ) {
-
-            dataCache[
-              current.sheetName
-            ] =
-              dataCache[
-                current.sheetName
-              ].filter(
-                item =>
-                  item.rowIndex !==
-                  current.rowIndex
+          if (dataCache[current.sheetName]) {
+            dataCache[current.sheetName] =
+              dataCache[current.sheetName].filter(
+                item => item.rowIndex !== current.rowIndex
               );
           }
 
-
-          quizData.splice(
-            currentIndex,
-            1
-          );
-
-
+          quizData.splice(currentIndex, 1);
           renderSongList();
 
-
-          setTimeout(
-            () => {
-
-              if (
-                quizData.length > 0
-              ) {
-
-                if (
-                  currentIndex >=
-                  quizData.length
-                ) {
-
-                  currentIndex =
-                    quizData.length - 1;
-                }
-
-
-                loadCurrentQuestion();
-
-              } else {
-
-                document.getElementById(
-                  'status'
-                ).innerText =
-                  "出題可能な曲がなくなりました。";
-
-
-                document.getElementById(
-                  'answer-card'
-                ).style.display =
-                  'none';
-
-
-                document.getElementById(
-                  'btn-ans'
-                ).innerText =
-                  "正解を表示";
+          setTimeout(() => {
+            if (quizData.length > 0) {
+              if (currentIndex >= quizData.length) {
+                currentIndex = quizData.length - 1;
               }
-
-            },
-            1000
-          );
-
+              loadCurrentQuestion();
+            } else {
+              document.getElementById('status').innerText =
+                "出題可能な曲がなくなりました。";
+              document.getElementById('answer-card').style.display = 'none';
+              document.getElementById('btn-ans').innerText = "正解を表示";
+            }
+          }, 1000);
         } else {
-
           statusEl.innerText =
-            "無効化失敗";
+            "無効化失敗: " + (data.message || "不明なエラー");
         }
-
       })
-
       .catch(err => {
-
         statusEl.innerText =
-          "通信エラー";
-
-        console.error(err);
+          "無効化失敗: " + (err.message || "通信エラー");
+        console.error("[GAS] 無効化エラー:", err);
       });
   }
 
@@ -3681,61 +3501,29 @@ if (currentSource === "niconico") {
     statusEl.innerText =
       "既存DBと照合して未登録曲を保存中...";
 
-
-    fetch(
-      GAS_URL,
+    sendGASAction(
+      "importPlaylist",
       {
-        method: "POST",
-
-        body: JSON.stringify({
-
-          action:
-            "importPlaylist",
-
-          playlistId:
-            playlistId,
-
-          genreTags:
-            genreTags
-
-        })
-      }
+        playlistId: playlistId,
+        genreTags: genreTags
+      },
+      0
     )
-
-      .then(res =>
-        res.json()
-      )
-
       .then(data => {
-
-        if (
-          data.status ===
-          "success"
-        ) {
-
-          const res =
-            data.result;
-
-
+        if (data.status === "success" && data.result) {
+          const res = data.result;
           statusEl.innerText =
             `完了！ 新規追加: ${res.addedCount}件 / スキップ(重複済み): ${res.skippedCount}件`;
-
-
           fetchSheetMetadata();
-
         } else {
-
           statusEl.innerText =
-            "保存に失敗しました。";
+            "保存失敗: " + (data.message || "不明なエラー");
         }
       })
-
       .catch(err => {
-
         statusEl.innerText =
-          "通信エラーが発生しました。";
-
-        console.error(err);
+          "保存失敗: " + (err.message || "通信エラーが発生しました");
+        console.error("[GAS] プレイリストDB保存エラー:", err);
       });
   }
 
@@ -4595,6 +4383,24 @@ if (currentSource === "niconico") {
     throw lastError || new Error("GASへの接続に失敗しました");
   }
 
+  // GASへのアクション実行共通関数（JSONP経由）
+  async function sendGASAction(action, params = {}, retryCount = 1) {
+    const url = new URL(GAS_URL);
+    url.searchParams.set("action", action);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    const resData = await fetchGASJson(url.toString(), retryCount);
+    if (!resData) {
+      throw new Error("GASからの応答が空です");
+    }
+    if (resData.status === "error") {
+      throw new Error(resData.message || "GAS側で処理エラーが発生しました");
+    }
+    return resData;
+  }
 </script>
 
 </body>

@@ -1,0 +1,18 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "YouTube",
+        "version": "v3",
+        "serviceId": "youtube"
+      }
+    ]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "webapp": {
+    "executeAs": "USER_ACCESSING",
+    "access": "ANYONE"
+  }
+}
