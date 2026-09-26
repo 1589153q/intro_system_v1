@@ -341,6 +341,7 @@
   let seekTimer = null;
   let isUserSeeking = false;
   let autoSkipTimeout = null;
+  let nicoRandomRatio = 0.3; // 完全ラントロ用のランダム割合（曲全体に対する比率）
 
   let currentVolume = 100;
   let isMuted = false;
@@ -506,11 +507,26 @@
     if (metaDurationSec !== null) {
       nicoDuration = metaDurationSec;
 
-      // 決定済みの開始秒が実際の動画長を超えている場合の安全補正
-      if (nicoStartPositionApplied && actualStartSec >= nicoDuration && nicoDuration > 0) {
-        actualStartSec = Math.max(0, nicoDuration - 1);
-        if (actualStartSec > 0) {
+      // 完全ラントロモード時、本物のdurationが届いた時点で比率に基づき安全な位置へ再計算
+      // （動画末尾の残り15秒未満にならないよう安全マージンを確保し、一瞬で終わるのを防止）
+      if (getSelectedPlayMode() === "fullRandom" && nicoDuration > 0) {
+        const maxSafeEnd = nicoDuration > 20 ? nicoDuration - 15 : Math.max(0, nicoDuration - 3);
+        const calculatedSec = Math.max(0, Math.min(nicoDuration * nicoRandomRatio, maxSafeEnd));
+
+        if (!nicoHasStartedPlayback) {
+          // まだ再生開始前なら、本物のdurationに基づきactualStartSecと表示を更新
+          actualStartSec = calculatedSec;
+          const statusEl = document.getElementById("status");
+          if (statusEl && statusEl.innerText.includes("準備完了")) {
+            statusEl.innerText =
+              `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
+              `（開始 ${actualStartSec.toFixed(1)} 秒）`;
+          }
+        } else if (!nicoInitialSeekDone && actualStartSec >= nicoDuration - 5) {
+          // 再生開始直後でもし末尾付近に行きそうなら安全な位置へ即座にシーク
+          actualStartSec = calculatedSec;
           sendNicoPlayerCommand("seek", { time: Math.round(actualStartSec * 1000) });
+          sendNicoPlayerCommand("play");
         }
       }
 
@@ -659,11 +675,13 @@
         sendNicoPlayerCommand("seek", {
           time: Math.round(actualStartSec * 1000)
         });
+        sendNicoPlayerCommand("play");
         setTimeout(() => {
           if (!nicoInitialSeekDone) {
             sendNicoPlayerCommand("seek", {
               time: Math.round(actualStartSec * 1000)
             });
+            sendNicoPlayerCommand("play");
           }
         }, 180);
       }
@@ -676,6 +694,14 @@
     // --------------------------------------------------------
 
     if (nicoPlayerStatus === 3) {
+
+      // 親ページが「再生中（isPlaying === true）」の最中にシークやバッファで一時停止に落ちた場合、
+      // ボタンを勝手に停止に戻さず、即座にplayコマンドを送って再生を確実に続行させる！
+      if (isPlaying) {
+        console.log("[NicoNico] 再生中のシーク/バッファによる一時停止を検知: 再生を継続 (play再送)");
+        sendNicoPlayerCommand("play");
+        return;
+      }
 
       isPlaying = false;
 
@@ -2894,6 +2920,9 @@ if (currentSource === "niconico") {
             time: Math.round(actualStartSec * 1000)
           }
         );
+        sendNicoPlayerCommand(
+          "play"
+        );
       }
 
       sendNicoPlayerCommand(
@@ -2916,6 +2945,9 @@ if (currentSource === "niconico") {
                 {
                   time: Math.round(actualStartSec * 1000)
                 }
+              );
+              sendNicoPlayerCommand(
+                "play"
               );
             }
           }, delay);
@@ -3865,11 +3897,11 @@ if (currentSource === "niconico") {
             document.getElementById(
               "cut-start"
             )?.value
-          ) || 0
+          ) || 5
         )
       );
 
-    const cutEndPercent =
+    const userCutEnd =
       Math.max(
         0,
         Math.min(
@@ -3878,41 +3910,34 @@ if (currentSource === "niconico") {
             document.getElementById(
               "cut-end"
             )?.value
-          ) || 0
+          ) || 5
         )
       );
 
-    const startBoundary =
-      duration *
-      (
-        cutStartPercent / 100
-      );
+    // 語尾カットはUI指定値に加え、イントロクイズで一瞬で終わらないよう最低でも15%はカットする
+    const effectiveCutEnd = Math.max(userCutEnd, 15);
 
-    const endBoundary =
-      duration *
-      (
-        1 - cutEndPercent / 100
-      );
+    const startPercent = cutStartPercent / 100;
+    const endPercent = 1 - (effectiveCutEnd / 100);
 
-    if (
-      !Number.isFinite(duration) ||
-      duration <= 0
-    ) {
+    if (endPercent <= startPercent) {
+      nicoRandomRatio = 0.3;
+    } else {
+      nicoRandomRatio = Math.random() * (endPercent - startPercent) + startPercent;
+    }
+
+    if (!Number.isFinite(duration) || duration <= 0) {
       return 0;
     }
 
-    if (
-      endBoundary <= startBoundary
-    ) {
-      return 0;
+    let startSec = duration * nicoRandomRatio;
+
+    // 動画末尾の15秒以上前を確実に保証する（残り時間が一瞬で終わるのを完全に防止）
+    if (duration > 20) {
+      startSec = Math.min(startSec, duration - 15);
     }
 
-    return Math.random() *
-      (
-        endBoundary -
-        startBoundary
-      ) +
-      startBoundary;
+    return Math.max(0, startSec);
   }
 
 
