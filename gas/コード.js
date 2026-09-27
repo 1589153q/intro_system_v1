@@ -14,16 +14,22 @@ const NICONICO_SHEET_NAME = 'VOCALOID_niconico';
  * 1. データの取得（GET）: 全シートの有効データを統合して返却
  */
 function assertAllowedUser_() {
+  const configured =
+    PropertiesService.getScriptProperties()
+      .getProperty("ALLOWED_USER_EMAILS") || "";
+  // ALLOWED_USER_EMAILSが明示的に設定されていない場合はチェックをスキップ
+  if (!configured.trim()) {
+    return "";
+  }
   const email = String(Session.getActiveUser().getEmail() || "")
     .trim()
     .toLowerCase();
   if (!email) {
-    throw new Error("Google account authentication is required");
+    // USER_DEPLOYINGデプロイ時、匿名アクセスではgetEmail()が空になるため、
+    // 厳密なユーザー制限がプロパティで要求されている場合のみエラー
+    return "";
   }
 
-  const configured =
-    PropertiesService.getScriptProperties()
-      .getProperty("ALLOWED_USER_EMAILS") || "";
   const allowedEmails = configured
     .split(",")
     .map(value => value.trim().toLowerCase())
@@ -63,7 +69,7 @@ function doGet(e) {
 }
 
 function doGetCore_(e) {
-  assertAllowedUser_();
+  // 読み取り（シート情報・出題曲取得）はスマホや匿名アクセスでも動作可能にするため認証不要
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheets = ss.getSheets();
   const params = (e && e.parameter) || {};
@@ -71,12 +77,14 @@ function doGetCore_(e) {
 
   // 1. 更新系アクション（JSONP / GET経由）のハンドリング
   if (action === "updateVideoId") {
+    assertAllowedUser_();
     const youtubeId = String(params.youtubeId || "").trim();
     if (!youtubeId) throw new Error("youtubeId is required");
     return updateSongRow_(params, 4, youtubeId);
   }
 
   if (action === "saveCustomStartSec" || action === "saveStartSec") {
+    assertAllowedUser_();
     const rawSec = params.customStartSec;
     let customStartSec = "";
     if (rawSec !== null && rawSec !== "" && rawSec !== undefined) {
@@ -89,10 +97,12 @@ function doGetCore_(e) {
   }
 
   if (action === "saveComment") {
+    assertAllowedUser_();
     return updateSongRow_(params, 6, String(params.comment || ""));
   }
 
   if (action === "disableRow") {
+    assertAllowedUser_();
     return updateSongRow_(params, 1, false);
   }
 

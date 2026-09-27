@@ -1625,22 +1625,25 @@ function onSeekChange() {
       }
 
     } catch (err) {
-
       console.error(
         "[GAS] シート一覧取得失敗:",
         err
       );
 
       if (statusEl) {
-        statusEl.innerText =
-          "シート情報の取得に失敗しました。再取得を試みています...";
+        statusEl.innerHTML =
+          `シート情報の取得に失敗しました。再取得を試みています...<br>` +
+          `<span style="font-size:12px; font-weight:normal; color:#c9302c;">` +
+          `※iPhone等のモバイルで開かない場合は、` +
+          `<a href="${GAS_URL}" target="_blank" rel="noopener noreferrer" style="color:#007bff; text-decoration:underline; font-weight:bold;">` +
+          `ここをタップしてGoogleアクセスを一度承認</a>してください。</span>`;
       }
 
       updateSheetSelectOptions([]);
 
       setTimeout(
         () => fetchSheetMetadata(true),
-        2500
+        3500
       );
 
     } finally {
@@ -4471,7 +4474,9 @@ if (currentSource === "niconico") {
             settled = true;
             clearTimeout(timeoutId);
             delete window[callbackName];
-            script.remove();
+            if (script.parentNode) {
+              script.remove();
+            }
           };
 
           const timeoutId = setTimeout(() => {
@@ -4481,17 +4486,23 @@ if (currentSource === "niconico") {
 
           window[callbackName] = payload => {
             cleanup();
-            resolve(payload);
+            if (payload && payload.status === "error") {
+              reject(new Error(payload.message || "GAS側でエラーが返されました"));
+            } else {
+              resolve(payload);
+            }
           };
 
           script.onerror = () => {
             cleanup();
-            reject(new Error("GAS JSONPスクリプトを読み込めませんでした"));
+            reject(new Error("GAS JSONPスクリプトを読み込めませんでした（Google認証・ネットワーク制限）"));
           };
 
           requestUrl.searchParams.set("callback", callbackName);
           requestUrl.searchParams.set("_client_ts", Date.now() + "_" + attempt);
           script.src = requestUrl.toString();
+          script.async = true;
+          script.crossOrigin = "anonymous";
           document.head.appendChild(script);
         });
 
@@ -4500,7 +4511,7 @@ if (currentSource === "niconico") {
         lastError = err;
         console.warn(`[GAS] JSONP失敗 ${attempt + 1}/${retryCount + 1}:`, err);
         if (attempt < retryCount) {
-          await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+          await new Promise(resolve => setTimeout(resolve, 800 * (attempt + 1)));
         }
       }
     }
