@@ -5,15 +5,21 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>イントロクイズ システム</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
-    .card { background: white; padding: 25px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 750px; width: 100%; box-sizing: border-box; }
-    .status { font-weight: bold; margin-bottom: 15px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; text-align: center; padding: 20px 10px; background: #f0f2f5; color: #333; margin: 0; }
+    
+    /* 2カラムレイアウトコンテナ */
+    .app-layout { display: flex; gap: 20px; justify-content: center; align-items: flex-start; max-width: 1280px; margin: 0 auto; text-align: left; }
+    .main-panel { flex: 1 1 680px; max-width: 720px; text-align: center; }
+    .side-panel { flex: 1 1 480px; max-width: 540px; display: flex; flex-direction: column; gap: 15px; }
+
+    .card { background: white; padding: 20px 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; box-sizing: border-box; }
+    .status { font-weight: bold; margin-bottom: 12px; font-size: 15px; line-height: 1.5; color: #1a202c; }
     
     /* タブコンテナ・パネルのスタイル */
-    .settings-container { display: none; background: #f0f4f8; padding: 15px; border-radius: 8px; margin: 12px 0; text-align: left; font-size: 13px; }
-    .tab-header { display: flex; gap: 4px; border-bottom: 2px solid #ccc; margin-bottom: 12px; }
-    .tab-btn { background: #e0e0e0; color: #333; border: none; padding: 8px 12px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 13px; font-weight: bold; }
-    .tab-btn:hover { background: #d0d0d0; }
+    .settings-container { display: none; background: #f8fafc; padding: 16px; border-radius: 8px; margin: 12px 0; text-align: left; font-size: 13px; border: 1px solid #e2e8f0; }
+    .tab-header { display: flex; gap: 4px; border-bottom: 2px solid #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; }
+    .tab-btn { background: #e2e8f0; color: #475569; border: none; padding: 8px 12px; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 13px; font-weight: bold; transition: background 0.15s; }
+    .tab-btn:hover { background: #cbd5e1; }
     .tab-btn.active { background: #007bff; color: white; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
@@ -28,11 +34,15 @@
     .range-inputs input[type="date"] { width: 130px; }
     .filter-grid input[type="text"] { flex: 1; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
     
-    button { font-size: 14px; padding: 8px 14px; margin: 3px; cursor: pointer; border: none; border-radius: 6px; background: #007bff; color: white; transition: 0.2s; }
+    button { font-size: 14px; padding: 8px 14px; margin: 2px; cursor: pointer; border: none; border-radius: 6px; background: #007bff; color: white; transition: 0.15s ease-in-out; }
     button:hover { background: #0056b3; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-    button.btn-toggle { background: #28a745; font-weight: bold; min-width: 140px; }
+    button:disabled { background: #cbd5e1; cursor: not-allowed; opacity: 0.7; }
+    button.btn-toggle { background: #28a745; font-weight: bold; min-width: 120px; }
     button.btn-toggle.playing { background: #dc3545; }
+    
+    .control-buttons-row { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .action-buttons-row { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
     .switch-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; font-size: 14px; font-weight: bold; }
     .switch { position: relative; display: inline-block; width: 46px; height: 24px; }
     .switch input { opacity: 0; width: 0; height: 0; }
@@ -40,18 +50,27 @@
     .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
     input:checked + .slider { background-color: #28a745; }
     input:checked + .slider:before { transform: translateX(22px); }
+    
     #player-container { margin: 10px 0; }
     #player-wrapper { display: inline-block; }
     .hide-player { display: none !important; }
-    .seekbar-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px auto; max-width: 500px; font-size: 13px; font-family: monospace; }
+    .seekbar-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px auto; max-width: 520px; font-size: 13px; font-family: monospace; }
     .seekbar-container input[type="range"] { flex: 1; cursor: pointer; }
-    #answer-card { display: none; margin-top: 15px; padding: 15px; border-radius: 8px; background: #fff3cd; border: 1px solid #ffeeba; text-align: left; }
-    #answer-card h3 { margin: 0 0 10px 0; font-size: 18px; color: #d9534f; }
-    .snippet-box { font-size: 12px; max-height: 120px; overflow-y: auto; background: #fff; padding: 8px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; margin: 5px 0 10px 0; }
+    
+    /* 正解カードと出題リスト */
+    #answer-card { display: none; padding: 18px; border-radius: 10px; background: #fffdf5; border: 1px solid #ffeeba; text-align: left; }
+    #answer-card h3 { margin: 0 0 10px 0; font-size: 18px; color: #c9302c; border-bottom: 2px solid #fed7aa; padding-bottom: 5px; }
+    #answer-card p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+    .snippet-box { font-size: 12px; max-height: 140px; overflow-y: auto; background: #fff; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; white-space: pre-wrap; margin: 5px 0 12px 0; line-height: 1.5; color: #475569; }
     .input-row { margin-top: 4px; display: flex; gap: 5px; align-items: center; }
-    .input-row input, .input-row textarea { flex: 1; font-size: 13px; padding: 4px; }
-    #song-list-container { display: none; margin-top: 15px; text-align: left; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fafafa; }
-    #song-list-container ol { padding-left: 20px; margin: 0; font-size: 13px; }
+    .input-row input, .input-row textarea { flex: 1; font-size: 13px; padding: 5px; border: 1px solid #cbd5e1; border-radius: 4px; }
+    
+    #song-list-container { text-align: left; border: 1px solid #e2e8f0; padding: 14px; border-radius: 10px; background: #ffffff; }
+    .song-list-scroll { max-height: 400px; overflow-y: auto; margin-top: 8px; border: 1px solid #edf2f7; border-radius: 6px; padding: 4px 6px; }
+    #song-list-container ol { padding-left: 28px; margin: 0; font-size: 13px; }
+    #song-list-container li { padding: 3px 4px; border-radius: 3px; cursor: pointer; transition: background 0.15s; }
+    #song-list-container li:hover { background-color: #f1f5f9; }
+    #song-list-container li.current-playing { background-color: #e0f2fe; color: #0284c7; font-weight: bold; }
     
     /* 複数選択ドロップダウンのスタイル */
     .multiselect-dropdown { position: relative; display: inline-block; min-width: 200px; }
@@ -61,229 +80,306 @@
     .dropdown-item { display: flex; align-items: center; padding: 4px 6px; cursor: pointer; user-select: none; }
     .dropdown-item:hover { background-color: #f0f0f0; }
     .dropdown-item input[type="checkbox"] { margin-right: 8px; cursor: pointer; }
+
+    @media (max-width: 960px) {
+      .app-layout { flex-direction: column; align-items: center; }
+      .main-panel, .side-panel { max-width: 100%; width: 100%; }
+    }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h2>イントロクイズ</h2>
-  <div id="status" class="status">システム準備完了。シートを選択して「フィルター適用」を押してください。</div>
+<div class="app-layout">
+  <!-- 左パネル：プレイヤー・操作・設定 -->
+  <div class="card main-panel">
+    <div id="status" class="status">システム準備完了。シートを選択して「フィルター適用」を押してください。</div>
 
-  <div class="switch-container">
-    <span>動画を表示する</span>
-    <label class="switch">
-      <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
-      <span class="slider"></span>
-    </label>
-  </div>
-
-  <div id="player-container">
-
-  <!-- YouTubeプレイヤー -->
-  <div id="player-wrapper" class="hide-player">
-    <div id="player"></div>
-  </div>
-
-  <!-- NicoNicoプレイヤー -->
-  <div id="niconico-player-wrapper" class="hide-player">
-    <iframe
-      id="niconico-player"
-      src=""
-      width="640"
-      height="360"
-      allow="autoplay; fullscreen"
-      style="border:0;">
-    </iframe>
-  </div>
-
-</div>
-
-  <div class="seekbar-container">
-    <span id="time-current">0:00</span>
-    <input type="range" id="seek-bar" value="0" min="0" max="100" step="1" oninput="onSeekInput()" onchange="onSeekChange()" disabled>
-    <span id="time-duration">0:00</span>
-  </div>
-
-  <div>
-    <button id="btn-prev" onclick="prevQuestion()" disabled>◀ 前へ</button>
-    <button id="btn-load" onclick="nextQuestion()" disabled>次へ ▶</button><br>
-    <button id="btn-toggle" class="btn-toggle" onclick="togglePlay()" disabled>▶ 再生</button>
-    <button id="btn-ans" onclick="showAnswer()" disabled>正解を表示</button>
-  </div>
-
-  <div style="margin-top: 12px;">
-    <button onclick="shuffleQuestions()">🎲 シャッフル</button>
-    <button onclick="toggleSettingsBox()">⚙️ 設定・条件</button>
-    <button onclick="toggleSongList()">📋 出題リスト</button>
-  </div>
-
-  <!-- 統合された設定タブコンテナ -->
-  <div id="settings-container" class="settings-container" style="display: block;">
-    <div class="tab-header">
-      <button class="tab-btn active" onclick="switchTab('filter-panel', this)">🔍 条件・シート</button>
-      <button class="tab-btn" onclick="switchTab('playlist-panel', this)">▶ YouTube再生リスト</button>
-      <button class="tab-btn" onclick="switchTab('mode-panel', this)">🎵 再生モード・音量</button>
+    <div class="switch-container">
+      <span>動画を表示する</span>
+      <label class="switch">
+        <input type="checkbox" id="video-toggle" onchange="toggleVideoVisibility()">
+        <span class="slider"></span>
+      </label>
     </div>
 
-    <!-- 1. フィルタリングパネル -->
-    <div id="filter-panel" class="tab-panel active">
-      <div class="filter-grid">
-        <div class="filter-row">
-          <span class="filter-label">対象シート:</span>
-          <div class="multiselect-dropdown" id="sheet-multiselect">
-            <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
-              <span id="select-btn-text">対象シートを選択</span>
-              <span class="arrow">▼</span>
-            </button>
-            <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
-              <div class="dropdown-actions">
-                <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
-                <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
+    <div id="player-container">
+      <!-- YouTubeプレイヤー -->
+      <div id="player-wrapper" class="hide-player">
+        <div id="player"></div>
+      </div>
+
+      <!-- NicoNicoプレイヤー -->
+      <div id="niconico-player-wrapper" class="hide-player">
+        <iframe
+          id="niconico-player"
+          src=""
+          width="640"
+          height="360"
+          allow="autoplay; fullscreen"
+          style="border:0;">
+        </iframe>
+      </div>
+    </div>
+
+    <div class="seekbar-container">
+      <span id="time-current">0:00</span>
+      <input type="range" id="seek-bar" value="0" min="0" max="100" step="1" oninput="onSeekInput()" onchange="onSeekChange()" disabled>
+      <span id="time-duration">0:00</span>
+    </div>
+
+    <!-- 前へ、再生、次へ、正解を表示 を横並び配置 -->
+    <div class="control-buttons-row">
+      <button id="btn-prev" onclick="prevQuestion()" disabled>◀ 前へ</button>
+      <button id="btn-toggle" class="btn-toggle" onclick="togglePlay()" disabled>▶ 再生</button>
+      <button id="btn-load" onclick="nextQuestion()" disabled>次へ ▶</button>
+      <button id="btn-ans" onclick="showAnswer()" disabled>正解を表示</button>
+    </div>
+
+    <div class="action-buttons-row">
+      <button onclick="shuffleQuestions()">シャッフル</button>
+      <button onclick="toggleSettingsBox()">設定・条件</button>
+      <button onclick="toggleSongList()">出題リスト切替</button>
+    </div>
+
+    <!-- 統合された設定タブコンテナ -->
+    <div id="settings-container" class="settings-container" style="display: block;">
+      <div class="tab-header">
+        <button class="tab-btn active" onclick="switchTab('filter-panel', this)">条件・シート</button>
+        <button class="tab-btn" onclick="switchTab('playlist-panel', this)">YouTube再生リスト</button>
+        <button class="tab-btn" onclick="switchTab('mode-panel', this)">再生モード・音量</button>
+        <button class="tab-btn" onclick="switchTab('list-settings-panel', this)">リスト・コピー設定</button>
+      </div>
+
+      <!-- 1. フィルタリングパネル -->
+      <div id="filter-panel" class="tab-panel active">
+        <div class="filter-grid">
+          <div class="filter-row">
+            <span class="filter-label">対象シート:</span>
+            <div class="multiselect-dropdown" id="sheet-multiselect">
+              <button type="button" class="select-btn" onclick="toggleSheetDropdown(event)">
+                <span id="select-btn-text">対象シートを選択</span>
+                <span class="arrow">▼</span>
+              </button>
+              <div class="dropdown-content" id="sheet-checkbox-list" onclick="event.stopPropagation()">
+                <div class="dropdown-actions">
+                  <button type="button" onclick="selectAllSheets(true)" style="font-size: 11px; padding: 2px 6px;">全選択</button>
+                  <button type="button" onclick="selectAllSheets(false)" style="font-size: 11px; padding: 2px 6px; background: #6c757d;">全解除</button>
+                </div>
+                <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
+                <div id="sheet-options-container"></div>
               </div>
-              <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;">
-              <div id="sheet-options-container"></div>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">タグ検索:</span>
+            <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲">
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">最高順位:</span>
+            <div class="range-inputs">
+              <input type="number" id="f-rank-min" placeholder="1 (位)" min="1">
+              <span>～</span>
+              <input type="number" id="f-rank-max" placeholder="10 (位)" min="1">
+              <span style="font-size: 11px; color: #666; margin-left: 5px;">(※ #1, #2 などのタグ順位)</span>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">再生数:</span>
+            <div class="range-inputs">
+              <input type="number" id="f-views-min" placeholder="下限">
+              <span>～</span>
+              <input type="number" id="f-views-max" placeholder="上限">
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">投稿日:</span>
+            <div class="range-inputs">
+              <input type="date" id="f-date-min">
+              <span>～</span>
+              <input type="date" id="f-date-max">
             </div>
           </div>
         </div>
 
-        <div class="filter-row">
-          <span class="filter-label">タグ検索:</span>
-          <input type="text" id="f-tag" placeholder="例: ボカロ, オリ曲">
+        <div style="margin-top: 12px; text-align: right;">
+          <button onclick="applyFilters()" style="font-size: 12px; font-weight: bold; background-color: #28a745;">フィルター適用（データ取得）</button>
+          <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
+        </div>
+      </div>
+
+      <!-- 2. YouTube再生リストパネル -->
+      <div id="playlist-panel" class="tab-panel">
+        <strong>YouTube再生リストから出題・DB追加</strong>
+        <div style="margin-top:8px; display: flex; flex-direction: column; gap: 8px;">
+          <div>
+            再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
+          </div>
+          <div>
+            ジャンルタグ: 
+            <input type="text" id="playlist-tag-input" list="tag-suggestions" placeholder="例: アニソン, J-POP (選択または直接入力)" style="width: 280px;">
+            <datalist id="tag-suggestions"></datalist>
+          </div>
+          <div>
+            <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
+            <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
+          </div>
+        </div>
+        <div style="margin-top: 5px;">
+          <span id="playlist-status" style="font-size:12px; color:blue;"></span>
+        </div>
+      </div>
+
+      <!-- 3. 再生モード・音量パネル -->
+      <div id="mode-panel" class="tab-panel">
+        <strong>再生モード設定</strong><br><br>
+        <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
+        <label><input type="radio" name="playMode" value="fullRandom" onchange="updateModeUI()"> 完全ラントロ（ランダム秒数〜）</label>
+        <span id="full-random-settings" style="display:none; margin-left: 10px; font-size: 12px;">
+          除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
+        </span><br>
+        <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
+
+        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+        <strong>次へ移動時の動作</strong><br>
+        <div style="margin-top: 6px;">
+          <label style="cursor: pointer; margin-right: 15px;">
+            <input type="radio" name="autoPlayOnNext" value="manual" checked> 手動で再生する（停止状態で待機）
+          </label>
+          <label style="cursor: pointer;">
+            <input type="radio" name="autoPlayOnNext" value="auto"> 自動で再生する（準備完了次第直ちに再生）
+          </label>
         </div>
 
-        <div class="filter-row">
-          <span class="filter-label">最高順位:</span>
-          <div class="range-inputs">
-            <input type="number" id="f-rank-min" placeholder="1 (位)" min="1">
-            <span>～</span>
-            <input type="number" id="f-rank-max" placeholder="10 (位)" min="1">
-            <span style="font-size: 11px; color: #666; margin-left: 5px;">(※ #1, #2 などのタグ順位)</span>
+        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+        <strong>正解表示設定</strong><br>
+        <div style="margin-top: 6px;">
+          <label style="cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="keep-answer-toggle">
+            正解表示を固定する（次の動画へ移動した際に正解を隠さない）
+          </label>
+        </div>
+
+        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+        <strong>音量・ミュート設定</strong>
+        <div style="margin-top: 8px; display: flex; align-items: center; gap: 15px;">
+          <label>
+            音量: 
+            <input type="range" id="volume-slider" min="0" max="100" value="100" oninput="changeVolume(this.value)" style="vertical-align: middle;">
+            <span id="volume-text">100%</span>
+          </label>
+          <label style="cursor: pointer; font-weight: bold;">
+            <input type="checkbox" id="mute-checkbox" onchange="toggleMute(this.checked)"> ミュート
+          </label>
+        </div>
+      </div>
+
+      <!-- 4. リスト・クリップボード設定パネル -->
+      <div id="list-settings-panel" class="tab-panel">
+        <strong>出題リスト・クリップボード設定</strong><br><br>
+        
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold;">出題リストの表示形式:</label>
+          <div style="display: flex; gap: 6px; margin-top: 4px;">
+            <input type="text" id="list-format-input" value="{year}|{title}|{views}再生|{uploader}" style="flex:1; padding: 4px; font-size: 13px;">
+            <button type="button" onclick="renderSongList()" style="font-size: 12px; padding: 4px 10px;">反映</button>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+            タグ: {year}, {title}, {views}, {uploader}, {likes}, {date}
           </div>
         </div>
 
-        <div class="filter-row">
-          <span class="filter-label">再生数:</span>
-          <div class="range-inputs">
-            <input type="number" id="f-views-min" placeholder="下限">
-            <span>～</span>
-            <input type="number" id="f-views-max" placeholder="上限">
+        <hr style="margin: 12px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+        <div style="margin-bottom: 8px;">
+          <label style="cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="auto-copy-toggle" checked>
+            「次へ」を押したタイミングでクリップボードに自動保存する
+          </label>
+          <div style="margin-top: 6px;">
+            <label style="font-size: 12px; font-weight: bold;">クリップボード保存形式（独立設定）:</label>
+            <input type="text" id="copy-format-input" value="{year}|{title}|{views}再生|{uploader}" style="width: 100%; box-sizing: border-box; padding: 4px; font-size: 13px; margin-top: 2px;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <span style="font-size: 11px; color: #64748b;">直前に出題されていた曲の情報をクリップボードへ保存します。</span>
+            <span id="copy-toast-msg" style="font-size: 11px; color: #28a745; font-weight: bold; display: none;">✓ コピー完了</span>
           </div>
         </div>
-
-        <div class="filter-row">
-          <span class="filter-label">投稿日:</span>
-          <div class="range-inputs">
-            <input type="date" id="f-date-min">
-            <span>～</span>
-            <input type="date" id="f-date-max">
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-top: 12px; text-align: right;">
-        <button onclick="applyFilters()" style="font-size: 12px; font-weight: bold; background-color: #28a745;">フィルター適用（データ取得）</button>
-        <button onclick="resetFilters()" style="font-size: 12px; background: #6c757d;">リセット</button>
-      </div>
-    </div>
-
-    <!-- 2. YouTube再生リストパネル -->
-    <div id="playlist-panel" class="tab-panel">
-      <strong>▶ YouTube再生リストから出題・DB追加</strong>
-      <div style="margin-top:8px; display: flex; flex-direction: column; gap: 8px;">
-        <div>
-          再生リストID: <input type="text" id="playlist-id-input" placeholder="例: PLZT1qIN_o6E4..." style="width: 250px;">
-        </div>
-        <div>
-          ジャンルタグ: 
-          <input type="text" id="playlist-tag-input" list="tag-suggestions" placeholder="例: アニソン, J-POP (選択または直接入力)" style="width: 280px;">
-          <datalist id="tag-suggestions"></datalist>
-        </div>
-        <div>
-          <button onclick="loadFromPlaylistDirect()" style="font-size:12px;">このリストで遊ぶ</button>
-          <button onclick="savePlaylistToDB()" style="font-size:12px; background:#28a745;">未登録曲をDBへ保存</button>
-        </div>
-      </div>
-      <div style="margin-top: 5px;">
-        <span id="playlist-status" style="font-size:12px; color:blue;"></span>
-      </div>
-    </div>
-
-    <!-- 3. 再生モード・音量パネル -->
-    <div id="mode-panel" class="tab-panel">
-      <strong>🎵 再生モード設定</strong><br><br>
-      <label><input type="radio" name="playMode" value="normal" checked onchange="updateModeUI()"> 通常（イントロ0秒〜）</label><br>
-      <label><input type="radio" name="playMode" value="fullRandom" onchange="updateModeUI()"> 完全ラントロ（ランダム秒数〜）</label>
-      <span id="full-random-settings" style="display:none; margin-left: 10px; font-size: 12px;">
-        除外: 冒頭 <input type="number" id="cut-start" value="5" style="width:40px;"> % / 語尾 <input type="number" id="cut-end" value="5" style="width:40px;"> %
-      </span><br>
-      <label><input type="radio" name="playMode" value="customSec" onchange="updateModeUI()"> 指定ラントロ（指定秒数〜）</label>
-
-      <hr style="margin: 12px 0; border: 0; border-top: 1px solid #ccc;">
-
-      <strong>🔊 音量・ミュート設定</strong>
-      <div style="margin-top: 8px; display: flex; align-items: center; gap: 15px;">
-        <label>
-          音量: 
-          <input type="range" id="volume-slider" min="0" max="100" value="100" oninput="changeVolume(this.value)" style="vertical-align: middle;">
-          <span id="volume-text">100%</span>
-        </label>
-        <label style="cursor: pointer; font-weight: bold;">
-          <input type="checkbox" id="mute-checkbox" onchange="toggleMute(this.checked)"> 🔇 ミュート
-        </label>
       </div>
     </div>
   </div>
 
-  <div id="song-list-container">
-    <strong>【出題リスト】</strong>
-    <ol id="song-list"></ol>
-  </div>
-
-  <!-- 正解カード -->
-  <div id="answer-card">
-    <h3>【正解】</h3>
-    <p><strong>動画タイトル：</strong> <span id="ans-title"></span></p>
-    <p><strong>歌唱者：</strong> <span id="ans-artist"></span></p>
-    <p><strong>チャンネル名：</strong> <span id="ans-channel"></span></p>
-    <p><strong>投稿日：</strong> <span id="ans-date"></span></p>
-    <p><strong>再生数：</strong> <span id="ans-views"></span> 回 / <strong>いいね数：</strong> <span id="ans-likes"></span></p>
-    
-    <strong>説明欄：</strong>
-    <div id="ans-snippet" class="snippet-box"></div>
-
-    <hr style="border:0; border-top:1px dashed #ccc; margin: 12px 0;">
-
-    <div>
-      <strong>代表ID:</strong>
-      <div class="input-row">
-        <select id="video-id-select" style="flex:1; font-size:13px; padding:4px;"></select>
-        <button onclick="applyVideoIdChange()" style="font-size: 12px;">書き換え保存</button>
+  <!-- 右パネル：正解窓 ＆ 出題リスト -->
+  <div class="side-panel">
+    <!-- 正解カード -->
+    <div id="answer-card" class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3 style="margin: 0; font-size: 18px; color: #c9302c;">【正解】</h3>
       </div>
-      <span id="video-save-status" style="font-size: 12px; color: green;"></span>
+      <p><strong>動画タイトル：</strong> <span id="ans-title"></span></p>
+      <p><strong>投稿者：</strong> <span id="ans-uploader"></span></p>
+      <p id="ans-tags-row" style="display:none;"><strong>タグ：</strong> <span id="ans-tags"></span></p>
+      <p><strong>投稿日：</strong> <span id="ans-date"></span></p>
+      <p><strong>再生数：</strong> <span id="ans-views"></span> 回 / <strong>いいね数：</strong> <span id="ans-likes"></span></p>
+      
+      <strong>説明欄：</strong>
+      <div id="ans-snippet" class="snippet-box"></div>
+
+      <hr style="border:0; border-top:1px dashed #cbd5e1; margin: 12px 0;">
+
+      <div>
+        <strong>代表ID:</strong>
+        <div class="input-row">
+          <select id="video-id-select" style="flex:1; font-size:13px; padding:4px;"></select>
+          <button onclick="applyVideoIdChange()" style="font-size: 12px;">書き換え保存</button>
+        </div>
+        <span id="video-save-status" style="font-size: 12px; color: green;"></span>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <strong>指定ラントロ秒数:</strong>
+        <div class="input-row">
+          <input type="number" id="custom-sec-input" placeholder="例: 45 (秒)">
+          <button onclick="saveCustomStartSec()" style="font-size: 12px;">秒数を保存</button>
+        </div>
+        <span id="sec-save-status" style="font-size: 12px; color: green;"></span>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <strong>メモ・コメント:</strong>
+        <div class="input-row">
+          <textarea id="comment-input" placeholder="コメントを入力..."></textarea>
+          <button onclick="saveCommentWithAuth()" style="font-size: 12px;">コメントを保存</button>
+        </div>
+        <span id="comment-save-status" style="font-size: 12px; color: green;"></span>
+      </div>
+
+      <!-- データ無効化ボタン -->
+      <div style="margin-top: 15px; text-align: right; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+        <button onclick="disableCurrentSong()" style="font-size: 12px; background-color: #dc3545;">この曲を無効化（DB非表示）</button>
+        <span id="disable-status" style="font-size: 12px; color: red; margin-left: 5px;"></span>
+      </div>
     </div>
 
-    <div style="margin-top: 10px;">
-      <strong>指定ラントロ秒数:</strong>
-      <div class="input-row">
-        <input type="number" id="custom-sec-input" placeholder="例: 45 (秒)">
-        <button onclick="saveCustomStartSec()" style="font-size: 12px;">秒数を保存</button>
+    <!-- 出題リスト -->
+    <div id="song-list-container" class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong style="font-size: 15px;">【出題リスト】</strong>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <span style="font-size: 12px;">番号ジャンプ:</span>
+          <input type="number" id="jump-number-input" min="1" placeholder="番号" style="width: 55px; padding: 3px 5px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px;">
+          <button type="button" onclick="jumpToQuestionNumber()" style="font-size: 11px; padding: 3px 8px;">移動</button>
+        </div>
       </div>
-      <span id="sec-save-status" style="font-size: 12px; color: green;"></span>
-    </div>
-
-    <div style="margin-top: 10px;">
-      <strong>メモ・コメント:</strong>
-      <div class="input-row">
-        <textarea id="comment-input" placeholder="コメントを入力..."></textarea>
-        <button onclick="saveCommentWithAuth()" style="font-size: 12px;">コメントを保存</button>
+      <div class="song-list-scroll">
+        <ol id="song-list"></ol>
       </div>
-      <span id="comment-save-status" style="font-size: 12px; color: green;"></span>
-    </div>
-
-    <!-- データ無効化ボタン -->
-    <div style="margin-top: 15px; text-align: right; border-top: 1px solid #ddd; padding-top: 10px;">
-      <button onclick="disableCurrentSong()" style="font-size: 12px; background-color: #dc3545;">🚫 この曲を無効化（DB非表示）</button>
-      <span id="disable-status" style="font-size: 12px; color: red; margin-left: 5px;"></span>
     </div>
   </div>
 </div>
@@ -298,6 +394,7 @@
   let quizData = [];
   let currentIndex = -1;
   let player;
+  let isPendingAutoPlay = false;
   // ============================================================
   // NicoNico
   // ============================================================
@@ -520,7 +617,7 @@
           if (statusEl && statusEl.innerText.includes("準備完了")) {
             statusEl.innerText =
               `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
-              `（開始 ${actualStartSec.toFixed(1)} 秒）`;
+              `（開始 ${formatStartSec(actualStartSec)}）`;
           }
         } else if (!nicoInitialSeekDone && actualStartSec >= nicoDuration - 5) {
           // 再生開始直後でもし末尾付近に行きそうなら安全な位置へ即座にシーク
@@ -1189,6 +1286,133 @@
     return (
       `${m}:${s < 10 ? '0' : ''}${s}`
     );
+  }
+
+  // ラントロ開始時間の「分:秒」表記（例: 1:44.3秒）
+  function formatStartSec(seconds) {
+    const sec = Math.max(0, Number(seconds) || 0);
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(1);
+    const paddedS = (sec % 60 < 10 ? '0' : '') + s;
+    return `${m}:${paddedS}秒`;
+  }
+
+  // 説明欄テキストのサニタイズ（HTMLタグ除去・改行保持・文字実体参照デコード）
+  function formatSnippetText(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+  }
+
+  // 出題リスト・クリップボード用テンプレートフォーマット
+  function formatSongItem(item, template) {
+    if (!item) return '';
+    const tpl = template || '{year}|{title}|{views}再生|{uploader}';
+    
+    // 投稿年
+    let year = '';
+    const dateStr = item.postDate || item.publishedAt || '';
+    if (dateStr) {
+      const match = String(dateStr).match(/\b(19\d\d|20\d\d)\b/);
+      if (match) {
+        year = match[1];
+      } else {
+        year = String(dateStr).slice(0, 4);
+      }
+    }
+
+    const title = item.videoTitle || '無題';
+    const views = (item.views !== undefined && item.views !== null && !isNaN(item.views))
+      ? Number(item.views).toLocaleString()
+      : '0';
+    const uploader = item.uploaderName || item.channelName || item.artist || '';
+    const likes = (item.likes !== undefined && item.likes !== null && !isNaN(item.likes))
+      ? Number(item.likes).toLocaleString()
+      : '0';
+
+    return tpl
+      .replace(/\{year\}/g, year)
+      .replace(/\{title\}/g, title)
+      .replace(/\{views\}/g, views)
+      .replace(/\{uploader\}/g, uploader)
+      .replace(/\{artist\}/g, item.artist || '')
+      .replace(/\{channel\}/g, item.channelName || '')
+      .replace(/\{date\}/g, dateStr)
+      .replace(/\{likes\}/g, likes);
+  }
+
+  // クリップボード自動保存
+  function copyCurrentSongToClipboard(item) {
+    if (!item) return;
+    const copyFormatInput = document.getElementById('copy-format-input');
+    const tpl = copyFormatInput ? copyFormatInput.value : '{year}|{title}|{views}再生|{uploader}';
+    const text = formatSongItem(item, tpl);
+    if (!text) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showCopyToast();
+      }).catch(e => {
+        fallbackCopyText(text);
+      });
+    } else {
+      fallbackCopyText(text);
+    }
+  }
+
+  function fallbackCopyText(text) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      showCopyToast();
+    } catch (err) {
+      console.warn("クリップボードコピー失敗:", err);
+    }
+  }
+
+  function showCopyToast() {
+    const el = document.getElementById("copy-toast-msg");
+    if (el) {
+      el.innerText = "✓ コピー完了";
+      el.style.display = "inline";
+      setTimeout(() => { el.style.display = "none"; }, 2500);
+    }
+  }
+
+  // 番号指定ジャンプ
+  function jumpToQuestionNumber() {
+    const input = document.getElementById('jump-number-input');
+    if (!input) return;
+    const num = parseInt(input.value, 10);
+    if (isNaN(num) || num < 1 || num > quizData.length) {
+      alert(`1 ～ ${quizData.length} の間の有効な番号を入力してください。`);
+      return;
+    }
+    jumpToQuestion(num - 1);
+  }
+
+  function jumpToQuestion(index) {
+    if (index < 0 || index >= quizData.length) return;
+    nicoPendingPlay = false;
+    currentIndex = index;
+    loadCurrentQuestion();
+    renderSongList();
   }
 
 
@@ -2364,165 +2588,121 @@ function onSeekChange() {
   // ============================================================
 
   function renderSongList() {
+    const listEl = document.getElementById('song-list');
+    if (!listEl) return;
 
-    const listEl =
-      document.getElementById(
-        'song-list'
-      );
+    const formatInput = document.getElementById('list-format-input');
+    const tpl = (formatInput && formatInput.value.trim())
+      ? formatInput.value.trim()
+      : '{year}|{title}|{views}再生|{uploader}';
 
-
-    if (!listEl) {
-      return;
-    }
-
-
-    const fragment = document.createDocumentFragment(); quizData.forEach(item => { const li = document.createElement('li'); li.textContent = (item.videoTitle || '無題') + ' (' + (item.artist || '不明') + ')'; fragment.appendChild(li); }); listEl.replaceChildren(fragment);
+    const fragment = document.createDocumentFragment();
+    quizData.forEach((item, index) => {
+      const li = document.createElement('li');
+      li.style.cursor = 'pointer';
+      li.style.padding = '3px 4px';
+      li.style.borderRadius = '3px';
+      if (index === currentIndex) {
+        li.className = 'current-playing';
+      }
+      li.textContent = formatSongItem(item, tpl);
+      li.onclick = () => {
+        jumpToQuestion(index);
+      };
+      fragment.appendChild(li);
+    });
+    listEl.replaceChildren(fragment);
   }
-
 
   function toggleSongList() {
-
-    const el =
-      document.getElementById(
-        'song-list-container'
-      );
-
-
-    el.style.display =
-      (
-        el.style.display === 'none' ||
-        el.style.display === ''
-      )
-        ? 'block'
-        : 'none';
+    const el = document.getElementById('song-list-container');
+    if (!el) return;
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
   }
-
 
   // ============================================================
   // 次の問題
   // ============================================================
 
   function nextQuestion() {
-
-    if (
-      currentIndex >=
-      quizData.length - 1
-    ) {
-
+    if (currentIndex >= quizData.length - 1) {
       return;
     }
 
+    // 自動クリップボード保存（ONの場合、直前に出題されていた曲の情報を保存）
+    const autoCopyCheckbox = document.getElementById('auto-copy-toggle');
+    if (autoCopyCheckbox && autoCopyCheckbox.checked && currentIndex >= 0 && currentIndex < quizData.length) {
+      copyCurrentSongToClipboard(quizData[currentIndex]);
+    }
 
-    // ==========================================================
+    // 自動再生フラグ判定
+    const autoPlayRadio = document.querySelector('input[name="autoPlayOnNext"]:checked');
+    isPendingAutoPlay = (autoPlayRadio && autoPlayRadio.value === 'auto');
+
     // NicoNicoの再生予約を完全に解除
-    // ==========================================================
-
     nicoPendingPlay = false;
 
-
-    // ==========================================================
-    // 次の問題へ
-    // ==========================================================
-
     currentIndex++;
-
     loadCurrentQuestion();
+    renderSongList();
   }
-
 
   // ============================================================
   // 前の問題
   // ============================================================
 
   function prevQuestion() {
-
-    if (
-      currentIndex <= 0
-    ) {
-
+    if (currentIndex <= 0) {
       return;
     }
 
-
-    // NicoNicoの再生予約を解除
+    isPendingAutoPlay = false;
     nicoPendingPlay = false;
 
-
     currentIndex--;
-
     loadCurrentQuestion();
+    renderSongList();
   }
-
 
   // ============================================================
   // ナビゲーションボタン
   // ============================================================
 
   function updateNavigationButtons() {
-
-    document.getElementById(
-      'btn-prev'
-    ).disabled =
-      (
-        currentIndex <= 0
-      );
-
-
-    document.getElementById(
-      'btn-load'
-    ).disabled =
-      (
-        currentIndex >=
-        quizData.length - 1
-      );
+    document.getElementById('btn-prev').disabled = (currentIndex <= 0);
+    document.getElementById('btn-load').disabled = (currentIndex >= quizData.length - 1);
   }
-
 
   // ============================================================
   // 現在の問題をロード
   // ============================================================
 
   function loadCurrentQuestion() {
-
     if (autoSkipTimeout) {
-
-      clearTimeout(
-        autoSkipTimeout
-      );
+      clearTimeout(autoSkipTimeout);
     }
-
 
     updateNavigationButtons();
 
+    // 正解表示固定トグル判定
+    const keepAnswerToggle = document.getElementById('keep-answer-toggle');
+    const answerCard = document.getElementById('answer-card');
+    const btnAns = document.getElementById('btn-ans');
 
-    document.getElementById(
-      "answer-card"
-    ).style.display =
-      "none";
+    if (keepAnswerToggle && keepAnswerToggle.checked) {
+      // 正解固定ON: 表示したまま新しい曲の情報で正解カードを即時更新
+      renderAnswerContent();
+      answerCard.style.display = 'block';
+      btnAns.innerText = "正解を隠す";
+    } else {
+      // 正解固定OFF: 次の動画へ移動時に正解を隠す
+      answerCard.style.display = 'none';
+      btnAns.innerText = "正解を表示";
+    }
 
-
-    document.getElementById(
-      "btn-ans"
-    ).innerText =
-      "正解を表示";
-
-
-    document.getElementById(
-      "btn-ans"
-    ).disabled =
-      true;
-
-
-    document.getElementById(
-      "btn-toggle"
-    ).disabled =
-      true;
-
-
-    document.getElementById(
-      "seek-bar"
-    ).disabled =
-      true;
+    btnAns.disabled = false;
+    document.getElementById("btn-toggle").disabled = true;
+    document.getElementById("seek-bar").disabled = true;
 
 
     isPlaying = false;
@@ -2545,6 +2725,8 @@ function onSeekChange() {
       "status"
     ).innerText =
       `第 ${currentIndex + 1} / ${quizData.length} 問 準備中...`;
+
+    renderSongList();
 
 
     const current =
@@ -2792,10 +2974,17 @@ if (currentSource === "niconico") {
         );
 
 
+        let startText = "";
+        if (mode === "fullRandom") {
+          startText = `（開始 ${formatStartSec(actualStartSec)}）`;
+        } else if (mode === "customSec" && actualStartSec > 0) {
+          startText = `（指定 ${formatStartSec(actualStartSec)}）`;
+        }
+
         document.getElementById(
           "status"
         ).innerText =
-          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+          `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` + startText;
 
 
         document.getElementById(
@@ -2817,6 +3006,13 @@ if (currentSource === "niconico") {
 
 
         updateSeekBarUI();
+
+        if (isPendingAutoPlay) {
+          isPendingAutoPlay = false;
+          setTimeout(() => {
+            togglePlay();
+          }, 100);
+        }
 
       }, 500);
 
@@ -3008,315 +3204,132 @@ if (currentSource === "niconico") {
 
 
   // ============================================================
+  // 正解カードの内容描画
+  // ============================================================
+
+  function renderAnswerContent() {
+    if (currentIndex < 0 || currentIndex >= quizData.length) return;
+    const current = quizData[currentIndex];
+    const isNicoNico = current && (current.niconicoId || current.niconicoUrl || current.sheetName === "VOCALOID_niconico");
+
+    // タイトル
+    const titleEl = document.getElementById('ans-title');
+    if (titleEl) titleEl.innerText = current.videoTitle || '';
+
+    // 投稿者（N列）
+    const uploaderEl = document.getElementById('ans-uploader');
+    if (uploaderEl) {
+      uploaderEl.innerText = isNicoNico
+        ? (current.uploaderName || current.artist || '-')
+        : (current.channelName || current.artist || '-');
+    }
+
+    // タグ（ニコニコ動画時、P列）
+    const tagsRow = document.getElementById('ans-tags-row');
+    const tagsSpan = document.getElementById('ans-tags');
+    if (tagsRow && tagsSpan) {
+      if (isNicoNico && current.tags) {
+        let tagStr = '';
+        if (Array.isArray(current.tags)) {
+          tagStr = current.tags.join(', ');
+        } else {
+          tagStr = String(current.tags);
+        }
+        if (tagStr.trim()) {
+          tagsSpan.innerText = tagStr;
+          tagsRow.style.display = 'block';
+        } else {
+          tagsRow.style.display = 'none';
+        }
+      } else {
+        tagsRow.style.display = 'none';
+      }
+    }
+
+    // 投稿日
+    const dateEl = document.getElementById('ans-date');
+    if (dateEl) {
+      dateEl.innerText = isNicoNico
+        ? (current.postDate || current.publishedAt || '')
+        : (current.postDate || '');
+    }
+
+    // 再生数・いいね数
+    const viewsEl = document.getElementById('ans-views');
+    if (viewsEl) viewsEl.innerText = (current.views || 0).toLocaleString();
+    const likesEl = document.getElementById('ans-likes');
+    if (likesEl) likesEl.innerText = (current.likes || 0).toLocaleString();
+
+    // 説明欄（HTMLタグや実体参照を整形）
+    const snippetEl = document.getElementById('ans-snippet');
+    if (snippetEl) snippetEl.innerText = formatSnippetText(current.description || '');
+
+    // 代表動画ID（YouTubeのみ）
+    const videoIdArea = document.getElementById("video-id-select")?.parentElement?.parentElement;
+    if (videoIdArea) {
+      videoIdArea.style.display = isNicoNico ? "none" : "block";
+    }
+
+    const selectEl = document.getElementById("video-id-select");
+    if (selectEl && !isNicoNico) {
+      selectEl.innerHTML = "";
+      (current.videoIdList || [current.youtubeId]).forEach(vid => {
+        if (!vid) return;
+        const opt = document.createElement("option");
+        opt.value = vid;
+        opt.innerText = vid + (vid === current.youtubeId ? " (現在の代表)" : "");
+        if (vid === current.youtubeId) {
+          opt.selected = true;
+        }
+        selectEl.appendChild(opt);
+      });
+    }
+
+    // 指定ラントロ秒数
+    const customSecInput = document.getElementById('custom-sec-input');
+    if (customSecInput) {
+      customSecInput.value = (!isNicoNico && current.customStartSec !== null) ? current.customStartSec : "";
+      const secArea = customSecInput.parentElement?.parentElement;
+      if (secArea) {
+        secArea.style.display = isNicoNico ? "none" : "block";
+      }
+    }
+
+    // コメント
+    const commentInput = document.getElementById('comment-input');
+    if (commentInput) {
+      commentInput.value = current.comment || "";
+    }
+
+    // 各種ステータスメッセージリセット
+    const vStatus = document.getElementById('video-save-status');
+    if (vStatus) vStatus.innerText = "";
+    const sStatus = document.getElementById('sec-save-status');
+    if (sStatus) sStatus.innerText = "";
+    const cStatus = document.getElementById('comment-save-status');
+    if (cStatus) cStatus.innerText = "";
+    const dStatus = document.getElementById('disable-status');
+    if (dStatus) dStatus.innerText = "";
+  }
+
+  // ============================================================
   // 正解表示
   // ============================================================
 
   function showAnswer() {
+    if (currentIndex < 0 || currentIndex >= quizData.length) return;
+    const answerCard = document.getElementById('answer-card');
+    const btnAns = document.getElementById('btn-ans');
 
-    if (
-      currentIndex < 0 ||
-      currentIndex >= quizData.length
-    ) {
-
+    if (answerCard.style.display === 'block') {
+      answerCard.style.display = 'none';
+      btnAns.innerText = "正解を表示";
       return;
     }
 
-
-    const answerCard =
-      document.getElementById(
-        'answer-card'
-      );
-
-
-    const btnAns =
-      document.getElementById(
-        'btn-ans'
-      );
-
-
-    const current =
-      quizData[currentIndex];
-
-
-    const isNicoNico =
-      current &&
-      (
-        current.niconicoId ||
-        current.niconicoUrl ||
-        current.sheetName ===
-          "VOCALOID_niconico"
-      );
-
-
-    // ==========================================================
-    // 正解表示中なら隠す
-    // ==========================================================
-
-    if (
-      answerCard.style.display ===
-      'block'
-    ) {
-
-      answerCard.style.display =
-        'none';
-
-
-      btnAns.innerText =
-        "正解を表示";
-
-
-      return;
-    }
-
-
-    // ==========================================================
-    // 基本情報
-    // ==========================================================
-
-    document.getElementById(
-      'ans-title'
-    ).innerText =
-      current.videoTitle || '';
-
-
-    document.getElementById(
-      'ans-artist'
-    ).innerText =
-      current.artist || '';
-
-
-    document.getElementById(
-      'ans-channel'
-    ).innerText =
-      isNicoNico
-        ? (
-            current.uploaderName ||
-            '-'
-          )
-        : (
-            current.channelName ||
-            ''
-          );
-
-
-    document.getElementById(
-      'ans-date'
-    ).innerText =
-      isNicoNico
-        ? (
-            current.postDate ||
-            current.publishedAt ||
-            ''
-          )
-        : (
-            current.postDate ||
-            ''
-          );
-
-
-    document.getElementById(
-      'ans-views'
-    ).innerText =
-      (
-        current.views ||
-        0
-      ).toLocaleString();
-
-
-    document.getElementById(
-      'ans-likes'
-    ).innerText =
-      (
-        current.likes ||
-        0
-      ).toLocaleString();
-
-
-    document.getElementById(
-      'ans-snippet'
-    ).innerText =
-      current.description ||
-      '';
-
-
-    // ==========================================================
-    // YouTube代表動画ID選択欄
-    // NicoNicoでは非表示
-    // ==========================================================
-
-    const videoIdArea =
-      document.getElementById(
-        "video-id-select"
-      )
-      ?.parentElement
-      ?.parentElement;
-
-
-    if (videoIdArea) {
-
-      videoIdArea.style.display =
-        isNicoNico
-          ? "none"
-          : "block";
-    }
-
-
-    const selectEl =
-      document.getElementById(
-        "video-id-select"
-      );
-
-
-    if (
-      selectEl &&
-      !isNicoNico
-    ) {
-
-      selectEl.innerHTML = "";
-
-
-      (
-        current.videoIdList ||
-        [current.youtubeId]
-      ).forEach(
-        vid => {
-
-          if (!vid) {
-            return;
-          }
-
-
-          const opt =
-            document.createElement(
-              "option"
-            );
-
-
-          opt.value =
-            vid;
-
-
-          opt.innerText =
-            vid +
-            (
-              vid ===
-              current.youtubeId
-                ? " (現在の代表)"
-                : ""
-            );
-
-
-          if (
-            vid ===
-            current.youtubeId
-          ) {
-
-            opt.selected =
-              true;
-          }
-
-
-          selectEl.appendChild(
-            opt
-          );
-        }
-      );
-    }
-
-
-    // ==========================================================
-    // 指定ラントロ秒数
-    // ==========================================================
-
-    const customSecInput =
-      document.getElementById(
-        'custom-sec-input'
-      );
-
-
-    if (customSecInput) {
-
-      customSecInput.value =
-        !isNicoNico &&
-        current.customStartSec !== null
-          ? current.customStartSec
-          : "";
-    }
-
-
-    // ==========================================================
-    // コメント
-    // ==========================================================
-
-    const commentInput =
-      document.getElementById(
-        'comment-input'
-      );
-
-
-    if (commentInput) {
-
-      commentInput.value =
-        current.comment || "";
-    }
-
-
-    // ==========================================================
-    // 保存ステータス
-    // ==========================================================
-
-    document.getElementById(
-      'video-save-status'
-    ).innerText = "";
-
-
-    document.getElementById(
-      'sec-save-status'
-    ).innerText = "";
-
-
-    document.getElementById(
-      'comment-save-status'
-    ).innerText = "";
-
-
-    document.getElementById(
-      'disable-status'
-    ).innerText = "";
-
-
-    // ==========================================================
-    // NicoNicoでは指定秒数UIも隠す
-    // ==========================================================
-
-    if (customSecInput) {
-
-      const secArea =
-        customSecInput.parentElement
-          ?.parentElement;
-
-
-      if (secArea) {
-
-        secArea.style.display =
-          isNicoNico
-            ? "none"
-            : "block";
-      }
-    }
-
-
-    // ==========================================================
-    // 正解カード表示
-    // ==========================================================
-
-    answerCard.style.display =
-      'block';
-
-
-    btnAns.innerText =
-      "正解を隠す";
-
+    renderAnswerContent();
+    answerCard.style.display = 'block';
+    btnAns.innerText = "正解を隠す";
   }
 
 
@@ -4016,15 +4029,22 @@ if (currentSource === "niconico") {
       if (mode === "fullRandom") {
         statusEl.innerText =
           `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
-          `（開始 ${actualStartSec.toFixed(1)} 秒）`;
+          `（開始 ${formatStartSec(actualStartSec)}）`;
       } else if (mode === "customSec" && actualStartSec > 0) {
         statusEl.innerText =
           `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` +
-          `（指定 ${actualStartSec.toFixed(1)} 秒）`;
+          `（指定 ${formatStartSec(actualStartSec)}）`;
       } else {
         statusEl.innerText =
           `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
       }
+    }
+
+    if (isPendingAutoPlay) {
+      isPendingAutoPlay = false;
+      setTimeout(() => {
+        togglePlay();
+      }, 100);
     }
 
     console.log(
@@ -4422,10 +4442,17 @@ if (currentSource === "niconico") {
       isMuted;
   }
 
+  const mode = getSelectedPlayMode();
+  let startText = "";
+  if (mode === "fullRandom") {
+    startText = `（開始 ${formatStartSec(actualStartSec)}）`;
+  } else if (mode === "customSec" && actualStartSec > 0) {
+    startText = `（指定 ${formatStartSec(actualStartSec)}）`;
+  }
   document.getElementById(
     "status"
   ).innerText =
-    `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！`;
+    `第 ${currentIndex + 1} / ${quizData.length} 問 準備完了！` + startText;
 }
 // GAS ContentServiceのJSON応答はブラウザーから直接fetchできないため、GETはJSONPで取得する。
   async function fetchGASJson(url, retryCount = 2) {
